@@ -1,0 +1,19 @@
+{
+  "name": "extensions",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "",
+  "license": "ISC",
+  "author": "jorge",
+  "dependencies": {
+    "@mariozechner/pi-ai": "^0.45.3",
+    "@mariozechner/pi-coding-agent": "^0.45.3"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5.9.3"
+  }
+}

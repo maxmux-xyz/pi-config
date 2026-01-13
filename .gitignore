@@ -1,0 +1,8 @@
+# Private - credentials
+auth.json
+
+# Private - session history
+sessions/
+
+# Dependencies - regenerate with: cd extensions && npm install
+extensions/node_modules/
