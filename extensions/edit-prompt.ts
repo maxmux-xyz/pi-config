@@ -14,7 +14,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, basename } from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { TUI, Component } from "@mariozechner/pi-tui";
 
 const PROMPTS_DIR = join(homedir(), "obsidian", "delvaze", "prompts");
@@ -228,6 +228,31 @@ export default function editPromptExtension(pi: ExtensionAPI) {
   // Session state - tracks the active prompt file for this session
   let activePromptFile: string | undefined;
 
+  /**
+   * Reconstruct state from session entries.
+   * Finds the last edit-prompt-state entry and restores activePromptFile.
+   */
+  const reconstructState = (ctx: ExtensionContext) => {
+    activePromptFile = undefined;
+
+    const entries = ctx.sessionManager.getEntries();
+    const stateEntry = entries
+      .filter((e: { type: string; customType?: string }) =>
+        e.type === "custom" && e.customType === "edit-prompt-state"
+      )
+      .pop() as { data?: { activePromptFile: string } } | undefined;
+
+    if (stateEntry?.data?.activePromptFile) {
+      activePromptFile = stateEntry.data.activePromptFile;
+    }
+  };
+
+  // Reconstruct state on session lifecycle events
+  pi.on("session_start", async (_event, ctx) => reconstructState(ctx));
+  pi.on("session_switch", async (_event, ctx) => reconstructState(ctx));
+  pi.on("session_fork", async (_event, ctx) => reconstructState(ctx));
+  pi.on("session_tree", async (_event, ctx) => reconstructState(ctx));
+
   pi.registerCommand("edit", {
     description: "Edit a prompt file in neovim and execute it",
     handler: async (_args, ctx) => {
@@ -255,6 +280,7 @@ export default function editPromptExtension(pi: ExtensionAPI) {
         }
         filepath = join(PROMPTS_DIR, filename);
         activePromptFile = filepath;
+        pi.appendEntry("edit-prompt-state", { activePromptFile: filepath });
       }
 
       // 4. Prepare file (create new or prepend section to existing)

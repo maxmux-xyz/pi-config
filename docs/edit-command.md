@@ -14,7 +14,18 @@ Opens neovim to edit prompt files stored in an Obsidian vault, then executes the
 1. **First `/edit` in session:** Prompts for filename → creates/opens file → opens neovim → executes prompt
 2. **Subsequent `/edit` in session:** Reuses same file → prepends new section → opens neovim → executes prompt
 
-The filename is stored in memory for the session. Restarting pi resets this.
+The filename persists across session restarts via `pi.appendEntry()`.
+
+### Session Persistence
+
+The active prompt filename is stored in the session file as a custom entry (`edit-prompt-state`). This enables:
+
+- **Continue session (`pi -c`):** Filename restored automatically
+- **Resume session (`/resume`):** Filename restored from target session
+- **Fork (`/fork`):** Filename carries forward to new branch
+- **Tree navigation (`/tree`):** Filename remains unchanged (session-wide)
+
+The filename is **session-wide**, not branch-specific. All branches in a session share the same active prompt file.
 
 ### Prompt Execution
 
@@ -56,6 +67,8 @@ New sections are **prepended** after frontmatter, pushing older content down.
 | Hardcoded directory | Single-user extension, simplicity over configurability |
 | Newest-first ordering | Most relevant prompt is always at top when editing |
 | Session-scoped filename | Natural workflow—related prompts stay in one file |
+| Session-wide (not branch-specific) | Simpler mental model; prompt file is a session-level setting |
+| Persisted via `appendEntry()` | Survives restarts; follows pi extension patterns |
 | HTML comment delimiters | Obsidian-friendly, doesn't render visually |
 | Auto-append `.md` | Convenience; entering `foo` creates `foo.md` |
 
@@ -69,6 +82,8 @@ New sections are **prepended** after frontmatter, pushing older content down.
 | Empty prompt saved | "No prompt entered" notification, no execution |
 | File missing frontmatter | Section prepended at start |
 | Neovim exits abnormally | Warning notification |
+| Session restored, file deleted | Uses restored path; creates new file |
+| New session (no state) | Prompts for filename as normal |
 
 ## Neovim Integration
 
