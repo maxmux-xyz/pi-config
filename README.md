@@ -4,7 +4,7 @@
 
 - `settings.json` - agent settings
 - `keybindings.json` - custom keybindings
-- `extensions/` - custom tools (websearch, handoff, notification, theme, edit-prompt, subagent)
+- `extensions/` - custom tools (websearch, handoff, notification, theme, edit-prompt, subagent, task)
 - `skills/` - custom skills (pr-review-comments, resolve-pr-comment)
 - `prompts/` - custom prompts
 - `agents/` - subagent definitions
@@ -18,6 +18,16 @@ Delegate tasks to subagents with isolated context. Supports single, parallel, an
 Agents defined in `agents/*.md` with frontmatter (`name`, `description`, `tools`, `model`).
 
 Based on [pi-coding-agent examples](https://github.com/mariozechner/pi-ai/tree/main/packages/coding-agent/examples/extensions/subagent).
+
+### task
+
+Spawn general-purpose subagents with isolated context. Inspired by Claude Code's Task tool.
+
+Unlike subagent (which requires pre-defined agents), task allows ad-hoc workers with inline prompts.
+
+- **Single:** `{ description: "..." }`
+- **Parallel:** `{ tasks: [{ description: "..." }, ...] }` (max 10, 4 concurrent)
+- **Per-task options:** `prompt`, `cwd`, `tools`, `model`
 
 ### edit-prompt
 
