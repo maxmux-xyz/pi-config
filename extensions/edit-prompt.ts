@@ -42,13 +42,6 @@ tags: []
 }
 
 /**
- * Generate a section marker with current timestamp.
- */
-function generateSectionMarker(): string {
-  return `<!-- prompt: ${generateTimestamp()} -->`;
-}
-
-/**
  * Prompt user for filename, handling .md extension and existing file confirmation.
  * Returns the normalized filename (with .md) or undefined if cancelled.
  */
@@ -85,15 +78,19 @@ async function getFilename(ctx: ExtensionCommandContext): Promise<string | undef
 
 /**
  * Prepare the file for editing. Creates new file or prepends section to existing.
- * Returns the line number where cursor should be positioned.
+ * Returns the line number where cursor should be positioned and the timestamp used.
  */
-function prepareFile(filepath: string): number {
-  const sectionMarker = generateSectionMarker();
+function prepareFile(filepath: string): { cursorLine: number; timestamp: string } {
+  const timestamp = generateTimestamp();
+  const startMarker = `<!-- prompt: ${timestamp} -->`;
+  const endMarker = `<!-- prompt-end: ${timestamp} -->`;
 
   if (!existsSync(filepath)) {
     const content = `${generateFrontmatter(filepath)}
 
-${sectionMarker}
+${startMarker}
+
+${endMarker}
 
 `;
     writeFileSync(filepath, content, "utf-8");
@@ -106,7 +103,9 @@ ${sectionMarker}
     // 6: (blank)
     // 7: <!-- prompt: ... -->
     // 8: (blank) <-- cursor here
-    return 8;
+    // 9: <!-- prompt-end: ... -->
+    // 10: (blank)
+    return { cursorLine: 8, timestamp };
   }
 
   const content = readFileSync(filepath, "utf-8");
@@ -128,17 +127,17 @@ ${sectionMarker}
 
   if (frontmatterEndLine === -1) {
     // No frontmatter found - prepend at start (shouldn't happen with our files)
-    const newContent = `${sectionMarker}\n\n${content}`;
+    const newContent = `${startMarker}\n\n${endMarker}\n\n${content}`;
     writeFileSync(filepath, newContent, "utf-8");
-    return 2;
+    return { cursorLine: 2, timestamp };
   }
 
   // Insert new section after frontmatter
   const beforeFrontmatter = lines.slice(0, frontmatterEndLine + 1);
   const afterFrontmatter = lines.slice(frontmatterEndLine + 1);
 
-  // Build new content: frontmatter, blank line, NEW section marker, blank line, old content
-  const newLines = [...beforeFrontmatter, "", sectionMarker, "", ...afterFrontmatter];
+  // Build new content: frontmatter, blank, start marker, blank (cursor), end marker, blank, old content
+  const newLines = [...beforeFrontmatter, "", startMarker, "", endMarker, "", ...afterFrontmatter];
 
   writeFileSync(filepath, newLines.join("\n"), "utf-8");
 
@@ -146,44 +145,47 @@ ${sectionMarker}
   // frontmatterEndLine is 0-indexed, nvim lines are 1-indexed
   // frontmatter ends at line (frontmatterEndLine + 1) in 1-indexed
   // blank line: frontmatterEndLine + 2
-  // section marker: frontmatterEndLine + 3
-  // cursor (blank line after marker): frontmatterEndLine + 4
-  return frontmatterEndLine + 4;
+  // start marker: frontmatterEndLine + 3
+  // cursor (blank line after start marker): frontmatterEndLine + 4
+  // end marker: frontmatterEndLine + 5
+  // blank line: frontmatterEndLine + 6
+  return { cursorLine: frontmatterEndLine + 4, timestamp };
 }
 
 /**
- * Extract the content of the first (newest) prompt section from a file.
- * Returns the text between the first <!-- prompt: ... --> and the next one (or EOF).
+ * Extract the content of a specific prompt section identified by timestamp.
+ * Returns the text between <!-- prompt: TIMESTAMP --> and <!-- prompt-end: TIMESTAMP -->.
+ * Returns empty string if either marker is missing or end comes before start.
  */
-function extractFirstSection(filepath: string): string {
+function extractSection(filepath: string, timestamp: string): string {
   if (!existsSync(filepath)) {
     return "";
   }
 
   const content = readFileSync(filepath, "utf-8");
 
-  // Regex to match section markers
-  const markerRegex = /<!-- prompt: [^>]+ -->/g;
+  // Build exact marker strings for this timestamp
+  const startMarker = `<!-- prompt: ${timestamp} -->`;
+  const endMarker = `<!-- prompt-end: ${timestamp} -->`;
 
-  // Find all markers with their positions
-  const markers: Array<{ index: number; length: number }> = [];
-  let match: RegExpExecArray | null;
-  while ((match = markerRegex.exec(content)) !== null) {
-    markers.push({ index: match.index, length: match[0].length });
-  }
-
-  const firstMarker = markers[0];
-  if (firstMarker === undefined) {
+  const startIndex = content.indexOf(startMarker);
+  if (startIndex === -1) {
     return "";
   }
 
-  // First section: from end of first marker to start of second marker (or EOF)
-  const firstMarkerEnd = firstMarker.index + firstMarker.length;
-  const secondMarker = markers[1];
-  const sectionEnd = secondMarker !== undefined ? secondMarker.index : content.length;
+  const endIndex = content.indexOf(endMarker);
+  if (endIndex === -1) {
+    return "";
+  }
 
-  const section = content.slice(firstMarkerEnd, sectionEnd);
-  return section.trim();
+  const contentStart = startIndex + startMarker.length;
+
+  // Validate: end must come after start
+  if (endIndex <= contentStart) {
+    return "";
+  }
+
+  return content.slice(contentStart, endIndex).trim();
 }
 
 /**
@@ -284,7 +286,7 @@ export default function editPromptExtension(pi: ExtensionAPI) {
       }
 
       // 4. Prepare file (create new or prepend section to existing)
-      const cursorLine = prepareFile(filepath);
+      const { cursorLine, timestamp } = prepareFile(filepath);
 
       // 5. Open neovim
       const exitCode = await openInNeovim(filepath, cursorLine, ctx);
@@ -294,8 +296,8 @@ export default function editPromptExtension(pi: ExtensionAPI) {
         return;
       }
 
-      // 6. Extract and execute prompt
-      const prompt = extractFirstSection(filepath);
+      // 6. Extract and execute prompt (only from the section we created)
+      const prompt = extractSection(filepath, timestamp);
 
       if (!prompt || prompt.trim() === "") {
         ctx.ui.notify("No prompt entered", "info");
