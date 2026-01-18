@@ -22,7 +22,7 @@ import {
   generateTimestamp,
 } from "./shared/editor-state.js";
 
-const PROMPTS_DIR = join(homedir(), "obsidian", "delvaze", "prompts");
+const PROMPTS_DIR = "/Users/maxime/dev/obsidianvault/prompts";
 
 /**
  * Generate frontmatter for a new file.
