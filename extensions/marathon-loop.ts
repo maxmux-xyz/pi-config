@@ -143,6 +143,10 @@ export default function (pi: ExtensionAPI) {
 			return { continue: false, reason: `Task paused${note}`, taskState };
 		}
 		
+		if (taskState.state !== "running") {
+			return { continue: false, reason: `Invalid state: "${taskState.state}" (must be running/paused/completed)`, taskState };
+		}
+		
 		if (taskState.iteration >= MAX_ITERATIONS) {
 			return { continue: false, reason: `Reached max iterations (${MAX_ITERATIONS})`, taskState };
 		}

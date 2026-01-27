@@ -179,28 +179,24 @@ Review the instructions and your work log. Is the entire task complete?
    - Any relevant outputs, links, or artifacts
    - Final state of the system
 2. Add a final entry to `work.md` marking completion
-3. **Update STATE.json** to mark completion:
+3. **Update STATE.json** - only change `state` and `note`:
    ```json
    {
      "state": "completed",
-     "iteration": <current>,
-     "updatedAt": "<now>",
      "note": "Task completed successfully"
    }
    ```
 4. Inform the user: "Task complete! See `<path>/result.md` for results."
 
-**If BLOCKED or need human input:**
-1. **Update STATE.json** to pause:
+**If need to PAUSE** (waiting for process, need input, hit blocker, etc.):
+1. **Update STATE.json** - only change `state` and `note`:
    ```json
    {
      "state": "paused",
-     "iteration": <current>,
-     "updatedAt": "<now>",
-     "note": "Reason for pause - what input/action is needed"
+     "note": "Reason for pause - e.g., 'Waiting for CI pipeline #1234' or 'Need credentials for X'"
    }
    ```
-2. Inform the user what's blocking and what they need to do.
+2. Inform the user why you're pausing and what needs to happen before resuming.
 
 **If NO - More Work Remains:**
 1. Ensure `work.md` has clear next steps
@@ -230,7 +226,7 @@ The next agent (or next session) will pick up from the work log.
 4. **Append-only work.md** - Never delete or overwrite previous session entries
 5. **Ask, don't assume** - If unclear on anything, ask the user
 6. **End after each chunk** - Don't chain multiple chunks in one session
-7. **Update STATE.json on completion/pause** - Set state to "completed" or "paused" with note
+7. **Update STATE.json on completion/pause** - Only change `state` and `note` (extension manages `iteration`/`updatedAt`)
 8. **Clear handoffs** - Write enough context that any agent can continue
 
 ---
@@ -240,8 +236,18 @@ The next agent (or next session) will pick up from the work log.
 | State | Meaning | Action |
 |-------|---------|--------|
 | `running` | Task is active | Continue working |
-| `paused` | Task needs human input | Stop and explain in note |
+| `paused` | Need to wait or need input | Stop and explain in note |
 | `completed` | Task is done | Stop, update result.md |
+
+**When to pause:** You can pause for any reason - examples:
+- Triggered a long-running process (CI, deployment, workflow) and need to wait for results
+- Need human input or clarification
+- Hit a blocker that requires manual intervention
+- Need to wait for external dependencies
+
+Always explain the reason in `note` so the human knows what to do or when to resume.
+
+**Important:** When updating STATE.json, only change `state` and `note`. The `iteration` and `updatedAt` fields are managed by the marathon extension.
 
 ---
 
