@@ -2,25 +2,30 @@
  * Marathon Loop Extension - Auto-run marathon skill until completion
  *
  * Automatically restarts the marathon skill after each chunk completes,
- * continuing until the task is done (result.md no longer contains "not yet complete").
+ * continuing until STATE.json indicates paused or completed.
  *
- * This extension works with an external wrapper script (marathon-runner.sh) that:
+ * This extension works with an external wrapper script (pi-marathon) that:
  * 1. Starts pi
  * 2. When pi exits, checks if marathon state file exists
  * 3. If yes, restarts pi with the continuation prompt
  *
+ * Task directory files:
+ *   STATE.json      - Task state (running/paused/completed), managed by extension
+ *   instructions.md - Task instructions (user-created)
+ *   work.md         - Work log (agent-managed, append-only)
+ *   result.md       - Final results (agent-managed)
+ *
  * Usage:
- *   ./marathon-runner.sh                        - Start the runner
+ *   pi-marathon                                 - Start the runner
  *   /marathon-loop docs/tasks/my-investigation  - Start auto-running
- *   /marathon-stop                              - Stop the loop
  *   /marathon-status                            - Show current status
- *   /marathon-pause                             - Pause loop (edit md files)
- *   /marathon-continue                          - Resume paused loop
  *   /marathon-steer <message>                   - Inject guidance for next iteration
  *
  * Agent tool:
  *   marathon_wait(minutes, reason)              - Agent can request delay before next iteration
  *                                                 (for waiting on CI, deployments, etc.)
+ *
+ * To stop/pause: Edit STATE.json in task dir or have agent set state to "paused"
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -29,37 +34,44 @@ import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from "
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-// State files are stored per-runner-instance to allow concurrent marathons
+// Runner state files are stored per-runner-instance to allow concurrent marathons
 const STATES_DIR = join(homedir(), ".pi", "marathon-states");
 
-interface MarathonState {
+// Runner state (internal, in ~/.pi/marathon-states/)
+interface RunnerState {
 	taskDir: string;
 	cwd: string;
-	iteration: number;
 	runnerId?: string;
-	paused?: boolean;
 	steerMessage?: string; // One-time message to inject into next iteration
 	waitSeconds?: number; // Delay before next iteration (for waiting on external jobs)
 }
 
-// Get runner ID from environment (set by marathon-runner.sh)
+// Task state (in task directory as STATE.json)
+interface TaskState {
+	state: "running" | "paused" | "completed";
+	iteration: number;
+	updatedAt: string;
+	note: string | null;
+}
+
+// Get runner ID from environment (set by pi-marathon)
 function getRunnerId(): string | null {
 	return process.env.MARATHON_RUNNER_ID || null;
 }
 
-// Get task dir from environment (set by marathon-runner.sh --task)
+// Get task dir from environment (set by pi-marathon --task)
 function getAutoStartTaskDir(): string | null {
 	return process.env.MARATHON_TASK_DIR || null;
 }
 
-function stateFilePath(): string | null {
+function runnerStateFilePath(): string | null {
 	const runnerId = getRunnerId();
 	if (!runnerId) return null;
 	return join(STATES_DIR, `${runnerId}.json`);
 }
 
-function loadState(): MarathonState | null {
-	const stateFile = stateFilePath();
+function loadRunnerState(): RunnerState | null {
+	const stateFile = runnerStateFilePath();
 	if (!stateFile || !existsSync(stateFile)) return null;
 	try {
 		return JSON.parse(readFileSync(stateFile, "utf8"));
@@ -68,35 +80,81 @@ function loadState(): MarathonState | null {
 	}
 }
 
-function saveState(state: MarathonState): void {
-	const stateFile = stateFilePath();
+function saveRunnerState(state: RunnerState): void {
+	const stateFile = runnerStateFilePath();
 	if (!stateFile) return;
 	mkdirSync(STATES_DIR, { recursive: true });
 	writeFileSync(stateFile, JSON.stringify(state, null, 2));
 }
 
-function clearState(): void {
-	const stateFile = stateFilePath();
+function clearRunnerState(): void {
+	const stateFile = runnerStateFilePath();
 	if (stateFile && existsSync(stateFile)) {
 		unlinkSync(stateFile);
 	}
 }
 
+// Task STATE.json helpers
+function taskStateFilePath(taskDir: string, cwd: string): string {
+	return join(cwd, taskDir, "STATE.json");
+}
+
+function loadTaskState(taskDir: string, cwd: string): TaskState | null {
+	const stateFile = taskStateFilePath(taskDir, cwd);
+	if (!existsSync(stateFile)) return null;
+	try {
+		return JSON.parse(readFileSync(stateFile, "utf8"));
+	} catch {
+		return null;
+	}
+}
+
+function saveTaskState(taskDir: string, cwd: string, state: TaskState): void {
+	const stateFile = taskStateFilePath(taskDir, cwd);
+	writeFileSync(stateFile, JSON.stringify(state, null, 2));
+}
+
+function createInitialTaskState(): TaskState {
+	return {
+		state: "running",
+		iteration: 1,
+		updatedAt: new Date().toISOString(),
+		note: null,
+	};
+}
+
 export default function (pi: ExtensionAPI) {
 	const MAX_ITERATIONS = 100; // Safety limit
 
-	function isComplete(taskDir: string, cwd: string): boolean {
-		const resultFile = join(cwd, taskDir, "result.md");
-		if (!existsSync(resultFile)) return false;
-		const content = readFileSync(resultFile, "utf8");
-		return !content.toLowerCase().includes("not yet complete");
+	// Check if task should continue running
+	function shouldContinue(taskDir: string, cwd: string): { continue: boolean; reason: string; taskState: TaskState | null } {
+		const taskState = loadTaskState(taskDir, cwd);
+		
+		if (!taskState) {
+			return { continue: false, reason: "STATE.json not found", taskState: null };
+		}
+		
+		if (taskState.state === "completed") {
+			return { continue: false, reason: "Task completed", taskState };
+		}
+		
+		if (taskState.state === "paused") {
+			const note = taskState.note ? `: ${taskState.note}` : "";
+			return { continue: false, reason: `Task paused${note}`, taskState };
+		}
+		
+		if (taskState.iteration >= MAX_ITERATIONS) {
+			return { continue: false, reason: `Reached max iterations (${MAX_ITERATIONS})`, taskState };
+		}
+		
+		return { continue: true, reason: "running", taskState };
 	}
 
 	// Helper to start a marathon (shared by auto-start and /marathon-loop command)
 	function startMarathon(taskDir: string, ctx: Parameters<Parameters<typeof pi.on>[1]>[1]) {
 		const runnerId = getRunnerId();
 		if (!runnerId) {
-			ctx.ui.notify("Must be running under marathon-runner.sh", "error");
+			ctx.ui.notify("Must be running under pi-marathon", "error");
 			return false;
 		}
 
@@ -112,13 +170,31 @@ export default function (pi: ExtensionAPI) {
 			return false;
 		}
 
-		if (isComplete(taskDir, ctx.cwd)) {
-			ctx.ui.notify(`Task already complete! See ${taskDir}/result.md`, "info");
-			return false;
+		// Check if STATE.json already exists
+		const existingTaskState = loadTaskState(taskDir, ctx.cwd);
+		if (existingTaskState) {
+			if (existingTaskState.state === "completed") {
+				ctx.ui.notify(`Task already completed! See ${taskDir}/result.md`, "info");
+				return false;
+			}
+			if (existingTaskState.state === "paused") {
+				// Resume from paused state
+				ctx.ui.notify(`Resuming paused task (iteration ${existingTaskState.iteration})`, "info");
+				saveTaskState(taskDir, ctx.cwd, {
+					...existingTaskState,
+					state: "running",
+					updatedAt: new Date().toISOString(),
+					note: null,
+				});
+			}
+			// If already running, just continue
+		} else {
+			// Create initial STATE.json
+			saveTaskState(taskDir, ctx.cwd, createInitialTaskState());
 		}
 
-		// Save state for the loop
-		saveState({ taskDir, cwd: ctx.cwd, iteration: 0, runnerId });
+		// Save runner state for the loop
+		saveRunnerState({ taskDir, cwd: ctx.cwd, runnerId });
 
 		ctx.ui.notify(`🏃 Starting marathon loop on ${taskDir}`, "info");
 		ctx.ui.setStatus("marathon", "🏃 Marathon running...");
@@ -131,12 +207,12 @@ export default function (pi: ExtensionAPI) {
 	// On session start, check if we're resuming a marathon or auto-starting one
 	pi.on("session_start", async (_event, ctx) => {
 		const runnerId = getRunnerId();
-		if (!runnerId) return; // Not running under marathon-runner.sh
+		if (!runnerId) return; // Not running under pi-marathon
 
-		const state = loadState();
+		const runnerState = loadRunnerState();
 		
-		// If no existing state, check for auto-start task dir
-		if (!state) {
+		// If no existing runner state, check for auto-start task dir
+		if (!runnerState) {
 			const autoStartTaskDir = getAutoStartTaskDir();
 			if (autoStartTaskDir) {
 				// Auto-start the marathon (small delay to let UI settle)
@@ -148,44 +224,47 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// Validate cwd matches (in case runner was restarted in wrong dir)
-		if (state.cwd !== ctx.cwd) {
-			ctx.ui.notify(`Marathon state cwd mismatch. Expected: ${state.cwd}`, "warning");
-			clearState();
+		if (runnerState.cwd !== ctx.cwd) {
+			ctx.ui.notify(`Marathon state cwd mismatch. Expected: ${runnerState.cwd}`, "warning");
+			clearRunnerState();
 			return;
 		}
 
-		// Check if paused - just show status and wait for /marathon-continue
-		if (state.paused) {
-			ctx.ui.setStatus("marathon", "⏸️ Marathon paused");
-			ctx.ui.notify(`⏸️ Marathon paused on ${state.taskDir} (iteration ${state.iteration}). Use /marathon-continue when ready.`, "info");
+		// Check task state
+		const { continue: shouldRun, reason, taskState } = shouldContinue(runnerState.taskDir, ctx.cwd);
+		
+		if (!taskState) {
+			ctx.ui.notify(`❌ ${reason} in ${runnerState.taskDir}`, "error");
+			clearRunnerState();
 			return;
 		}
 
-		// Check if already complete
-		if (isComplete(state.taskDir, ctx.cwd)) {
-			ctx.ui.notify(`🎉 Marathon complete! See ${state.taskDir}/result.md`, "success");
-			clearState();
-			return;
-		}
-
-		// Check iteration limit
-		if (state.iteration >= MAX_ITERATIONS) {
-			ctx.ui.notify(`⚠️ Marathon stopped: reached ${MAX_ITERATIONS} iterations`, "warning");
-			clearState();
+		if (!shouldRun) {
+			if (taskState.state === "completed") {
+				ctx.ui.notify(`🎉 Marathon complete! See ${runnerState.taskDir}/result.md`, "success");
+			} else if (taskState.state === "paused") {
+				ctx.ui.setStatus("marathon", "⏸️ Marathon paused");
+				ctx.ui.notify(`⏸️ ${reason}`, "info");
+				ctx.ui.notify(`Edit STATE.json and run /marathon-loop ${runnerState.taskDir} to resume`, "info");
+			} else {
+				ctx.ui.notify(`⚠️ Marathon stopped: ${reason}`, "warning");
+			}
+			ctx.ui.setStatus("marathon", undefined);
+			clearRunnerState();
 			return;
 		}
 
 		// Continue the marathon
-		ctx.ui.notify(`🏃 Resuming marathon (iteration ${state.iteration + 1}) on ${state.taskDir}`, "info");
-		ctx.ui.setStatus("marathon", `🏃 Marathon: iteration ${state.iteration + 1}...`);
+		ctx.ui.notify(`🏃 Resuming marathon (iteration ${taskState.iteration}) on ${runnerState.taskDir}`, "info");
+		ctx.ui.setStatus("marathon", `🏃 Marathon: iteration ${taskState.iteration}...`);
 
 		// Build prompt with optional steer message
-		let prompt = `marathon skill on ${state.taskDir}`;
-		if (state.steerMessage) {
-			prompt += `\n\nIMPORTANT GUIDANCE FROM HUMAN: ${state.steerMessage}`;
-			ctx.ui.notify(`📣 Including steer message: "${state.steerMessage}"`, "info");
+		let prompt = `marathon skill on ${runnerState.taskDir}`;
+		if (runnerState.steerMessage) {
+			prompt += `\n\nIMPORTANT GUIDANCE FROM HUMAN: ${runnerState.steerMessage}`;
+			ctx.ui.notify(`📣 Including steer message: "${runnerState.steerMessage}"`, "info");
 			// Clear the steer message after use
-			saveState({ ...state, steerMessage: undefined });
+			saveRunnerState({ ...runnerState, steerMessage: undefined });
 		}
 
 		// Small delay then trigger
@@ -204,26 +283,12 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (!getRunnerId()) {
-				ctx.ui.notify("Must be running under marathon-runner.sh to use /marathon-loop", "error");
-				ctx.ui.notify("Start with: ~/.pi/agent/scripts/marathon-runner.sh", "info");
+				ctx.ui.notify("Must be running under pi-marathon to use /marathon-loop", "error");
+				ctx.ui.notify("Start with: pi-marathon", "info");
 				return;
 			}
 
 			startMarathon(taskDir, ctx);
-		},
-	});
-
-	pi.registerCommand("marathon-stop", {
-		description: "Stop the marathon loop",
-		handler: async (_args, ctx) => {
-			const state = loadState();
-			if (state) {
-				clearState();
-				ctx.ui.setStatus("marathon", undefined);
-				ctx.ui.notify(`Marathon loop stopped (was on ${state.taskDir})`, "info");
-			} else {
-				ctx.ui.notify("No marathon loop running (or not in marathon-runner.sh)", "warning");
-			}
 		},
 	});
 
@@ -232,79 +297,34 @@ export default function (pi: ExtensionAPI) {
 		handler: async (_args, ctx) => {
 			const runnerId = getRunnerId();
 			if (!runnerId) {
-				ctx.ui.notify("Not running under marathon-runner.sh", "info");
+				ctx.ui.notify("Not running under pi-marathon", "info");
 				return;
 			}
-			const state = loadState();
-			if (!state) {
+			const runnerState = loadRunnerState();
+			if (!runnerState) {
 				ctx.ui.notify(`Runner ID: ${runnerId} | No active marathon`, "info");
 				return;
 			}
-			const pauseStatus = state.paused ? " | ⏸️ PAUSED" : "";
-			ctx.ui.notify(`Runner: ${runnerId} | Task: ${state.taskDir} | Iteration: ${state.iteration}${pauseStatus}`, "info");
-			if (state.steerMessage) {
-				ctx.ui.notify(`📣 Pending steer: "${state.steerMessage}"`, "info");
-			}
-			if (state.waitSeconds) {
-				ctx.ui.notify(`⏳ Pending wait: ${Math.round(state.waitSeconds / 60)}m before next iteration`, "info");
-			}
-		},
-	});
-
-	pi.registerCommand("marathon-pause", {
-		description: "Pause the marathon loop (human can edit md files)",
-		handler: async (_args, ctx) => {
-			const state = loadState();
-			if (!state) {
-				ctx.ui.notify("No marathon loop running", "warning");
+			
+			const taskState = loadTaskState(runnerState.taskDir, ctx.cwd);
+			if (!taskState) {
+				ctx.ui.notify(`Runner: ${runnerId} | Task: ${runnerState.taskDir} | STATE.json missing!`, "warning");
 				return;
 			}
-			if (state.paused) {
-				ctx.ui.notify("Marathon is already paused", "info");
-				return;
+			
+			const stateEmoji = taskState.state === "running" ? "🏃" : taskState.state === "paused" ? "⏸️" : "✅";
+			ctx.ui.notify(`Runner: ${runnerId} | Task: ${runnerState.taskDir}`, "info");
+			ctx.ui.notify(`${stateEmoji} State: ${taskState.state} | Iteration: ${taskState.iteration}`, "info");
+			
+			if (taskState.note) {
+				ctx.ui.notify(`📝 Note: ${taskState.note}`, "info");
 			}
-			saveState({ ...state, paused: true });
-			ctx.ui.setStatus("marathon", "⏸️ Marathon pausing...");
-			ctx.ui.notify(`⏸️ Marathon will pause after current iteration completes`, "info");
-			ctx.ui.notify(`Then edit your md files and /marathon-continue`, "info");
-		},
-	});
-
-	pi.registerCommand("marathon-continue", {
-		description: "Continue a paused marathon loop",
-		handler: async (_args, ctx) => {
-			const runnerId = getRunnerId();
-			if (!runnerId) {
-				ctx.ui.notify("Must be running under marathon-runner.sh", "error");
-				return;
+			if (runnerState.steerMessage) {
+				ctx.ui.notify(`📣 Pending steer: "${runnerState.steerMessage}"`, "info");
 			}
-			const state = loadState();
-			if (!state) {
-				ctx.ui.notify("No marathon loop to continue", "warning");
-				return;
+			if (runnerState.waitSeconds) {
+				ctx.ui.notify(`⏳ Pending wait: ${Math.round(runnerState.waitSeconds / 60)}m before next iteration`, "info");
 			}
-			if (!state.paused) {
-				ctx.ui.notify("Marathon is not paused", "info");
-				return;
-			}
-			// Check completion before resuming
-			if (isComplete(state.taskDir, ctx.cwd)) {
-				ctx.ui.notify(`🎉 Marathon already complete! See ${state.taskDir}/result.md`, "success");
-				clearState();
-				return;
-			}
-			// Build prompt with optional steer message
-			let prompt = `marathon skill on ${state.taskDir}`;
-			if (state.steerMessage) {
-				prompt += `\n\nIMPORTANT GUIDANCE FROM HUMAN: ${state.steerMessage}`;
-				ctx.ui.notify(`📣 Including steer message: "${state.steerMessage}"`, "info");
-			}
-			// Clear paused and steerMessage
-			saveState({ ...state, paused: false, steerMessage: undefined });
-			ctx.ui.setStatus("marathon", `🏃 Marathon: iteration ${state.iteration + 1}...`);
-			ctx.ui.notify(`▶️ Marathon continuing (iteration ${state.iteration + 1})`, "info");
-			// Trigger next run
-			pi.sendUserMessage(prompt);
 		},
 	});
 
@@ -316,18 +336,14 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("Usage: /marathon-steer <guidance message>", "error");
 				return;
 			}
-			const state = loadState();
-			if (!state) {
+			const runnerState = loadRunnerState();
+			if (!runnerState) {
 				ctx.ui.notify("No marathon loop running", "warning");
 				return;
 			}
-			saveState({ ...state, steerMessage: message });
+			saveRunnerState({ ...runnerState, steerMessage: message });
 			ctx.ui.notify(`📣 Steer message set: "${message}"`, "info");
-			if (!state.paused) {
-				ctx.ui.notify("Note: Message will be included in next iteration after current one completes", "info");
-			} else {
-				ctx.ui.notify("Message will be included when you /marathon-continue", "info");
-			}
+			ctx.ui.notify("Message will be included in next iteration", "info");
 		},
 	});
 
@@ -345,12 +361,12 @@ export default function (pi: ExtensionAPI) {
 			const runnerId = getRunnerId();
 			if (!runnerId) {
 				return {
-					content: [{ type: "text" as const, text: "Not running under marathon-runner.sh - wait request ignored" }],
+					content: [{ type: "text" as const, text: "Not running under pi-marathon - wait request ignored" }],
 				};
 			}
 
-			const state = loadState();
-			if (!state) {
+			const runnerState = loadRunnerState();
+			if (!runnerState) {
 				return {
 					content: [{ type: "text" as const, text: "No active marathon - wait request ignored" }],
 				};
@@ -359,12 +375,9 @@ export default function (pi: ExtensionAPI) {
 			const minutes = Math.max(1, Math.min(60, params.minutes)); // Clamp 1-60
 			const waitSeconds = minutes * 60;
 
-			saveState({ ...state, waitSeconds });
+			saveRunnerState({ ...runnerState, waitSeconds });
 
-			// Debug: confirm what was saved
-			const stateFile = stateFilePath();
 			ctx.ui.notify(`⏳ Marathon will wait ${minutes}m before next iteration: ${params.reason}`, "info");
-			ctx.ui.notify(`[debug] Saved waitSeconds=${waitSeconds} to ${stateFile}`, "info");
 			ctx.ui.setStatus("marathon", `⏳ Will wait ${minutes}m after this iteration`);
 
 			return {
@@ -386,44 +399,44 @@ Say: "Wait scheduled for ${minutes} minutes. Session ending now." and STOP.`,
 	// After each agent turn, check if we should continue
 	pi.on("agent_end", async (_event, ctx) => {
 		const runnerId = getRunnerId();
-		if (!runnerId) return; // Not running under marathon-runner.sh
+		if (!runnerId) return; // Not running under pi-marathon
 
-		const state = loadState();
-		if (!state) return;
+		const runnerState = loadRunnerState();
+		if (!runnerState) return;
 
-		// Debug: show what we loaded
-		ctx.ui.notify(`[debug] agent_end: loaded state iteration=${state.iteration} waitSeconds=${state.waitSeconds} paused=${state.paused}`, "info");
+		// Check task state
+		const { continue: shouldRun, reason, taskState } = shouldContinue(runnerState.taskDir, ctx.cwd);
 
-		// Check if paused
-		if (state.paused) {
-			ctx.ui.setStatus("marathon", "⏸️ Marathon paused");
-			ctx.ui.notify(`⏸️ Marathon paused. Use /marathon-continue when ready.`, "info");
-			return;
-		}
-
-		// Check completion
-		if (isComplete(state.taskDir, ctx.cwd)) {
-			ctx.ui.notify(`🎉 Marathon complete! See ${state.taskDir}/result.md`, "success");
+		if (!taskState) {
+			ctx.ui.notify(`❌ STATE.json not found - stopping marathon`, "error");
 			ctx.ui.setStatus("marathon", undefined);
-			clearState();
+			clearRunnerState();
 			return;
 		}
 
-		// Safety limit
-		if (state.iteration >= MAX_ITERATIONS) {
-			ctx.ui.notify(`⚠️ Marathon stopped: reached ${MAX_ITERATIONS} iterations`, "warning");
+		if (!shouldRun) {
+			if (taskState.state === "completed") {
+				ctx.ui.notify(`🎉 Marathon complete! See ${runnerState.taskDir}/result.md`, "success");
+			} else if (taskState.state === "paused") {
+				ctx.ui.notify(`⏸️ Marathon paused: ${reason}`, "info");
+			} else {
+				ctx.ui.notify(`⚠️ Marathon stopped: ${reason}`, "warning");
+			}
 			ctx.ui.setStatus("marathon", undefined);
-			clearState();
+			clearRunnerState();
 			return;
 		}
 
-		// Update state for next iteration, preserving waitSeconds if set
-		const newState = { ...state, iteration: state.iteration + 1 };
-		saveState(newState);
-		ctx.ui.notify(`[debug] agent_end: saved state iteration=${newState.iteration} waitSeconds=${newState.waitSeconds}`, "info");
+		// Increment iteration in STATE.json
+		const newTaskState: TaskState = {
+			...taskState,
+			iteration: taskState.iteration + 1,
+			updatedAt: new Date().toISOString(),
+		};
+		saveTaskState(runnerState.taskDir, ctx.cwd, newTaskState);
 
-		ctx.ui.setStatus("marathon", `🏃 Marathon: restarting for iteration ${state.iteration + 2}...`);
-		ctx.ui.notify(`Restarting pi for fresh session (iteration ${state.iteration + 2})...`, "info");
+		ctx.ui.setStatus("marathon", `🏃 Marathon: restarting for iteration ${newTaskState.iteration}...`);
+		ctx.ui.notify(`Restarting pi for fresh session (iteration ${newTaskState.iteration})...`, "info");
 
 		// Small delay then shutdown - wrapper script will restart
 		await new Promise((r) => setTimeout(r, 2000));
