@@ -1,9 +1,15 @@
 ---
 name: marathon
-description: Execute long-running tasks defined in a task directory. Reads instructions.md, tracks progress in work.md (append-only), writes final results to result.md, and manages state via STATE.json. Works in small, manageable chunks and ends the session after each chunk to allow handoff to the next agent. Use when you have a task directory with an instructions.md file.
+description: "[REFERENCE DOC] Detailed state file management for loop execution. For execution, use the compact /loop skill instead. Read this for deep understanding of the file structures."
 ---
 
-# Marathon Skill
+# Marathon State Management (Reference Documentation)
+
+> **For loop execution, use `/loop` instead.** This document provides detailed information about state file management for those wanting to understand the mechanics deeply.
+
+---
+
+# State File Details
 
 Execute long-running tasks from a task directory, working in small chunks with session handoffs.
 
