@@ -541,14 +541,23 @@ Say: "Waiting for human feedback. Session ending now." and STOP.`,
 		if (!shouldRun) {
 			if (taskState.state === "completed") {
 				ctx.ui.notify(`🎉 Marathon complete! See ${runnerState.taskDir}/result.md`, "success");
+				ctx.ui.setStatus("marathon", undefined);
+				clearRunnerState();
+				return;
 			} else if (taskState.state === "paused") {
 				ctx.ui.notify(`⏸️ Marathon paused: ${reason}`, "info");
+				ctx.ui.setStatus("marathon", "⏸️ Marathon paused");
+				// Don't clear runner state - bash script will prompt to continue
+				// Shutdown so bash script can handle the pause prompt
+				await new Promise((r) => setTimeout(r, 2000));
+				ctx.shutdown();
+				return;
 			} else {
 				ctx.ui.notify(`⚠️ Marathon stopped: ${reason}`, "warning");
+				ctx.ui.setStatus("marathon", undefined);
+				clearRunnerState();
+				return;
 			}
-			ctx.ui.setStatus("marathon", undefined);
-			clearRunnerState();
-			return;
 		}
 
 		// Increment iteration in STATE.json

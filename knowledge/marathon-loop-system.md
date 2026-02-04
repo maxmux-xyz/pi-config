@@ -105,6 +105,47 @@ docs/tasks/20260202-143000-my-task/
 | `state` | `running`, `paused`, `completed` |
 | `phase` | `research`, `plan`, `implement`, `done` |
 
+## Pause/Continue Flow
+
+When the agent completes a phase (research or plan), the marathon pauses with an interactive prompt:
+
+```
+╔══════════════════════════════════════════════════════════════════╗
+║  ⏸️  MARATHON PAUSED                                              ║
+╚══════════════════════════════════════════════════════════════════╝
+
+Phase: research | Iteration: 1
+Note: Research complete - awaiting human review
+
+Review the output (e.g., docs/tasks/.../research.md)
+
+────────────────────────────────────────────────────────────────────
+Options:
+  [Enter]     Continue to next phase
+  [f]         Add feedback first (writes to human.md)
+  [q]         Quit marathon
+```
+
+### Options at Pause
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Continue to next phase |
+| `f` | Add feedback to `human.md`, then continue |
+| `q` | Quit marathon completely |
+
+### How It Works
+
+1. Agent completes phase → sets `STATE.json` to `paused`
+2. Extension detects pause → exits pi session (keeps runner state)
+3. Bash script sees paused state → shows interactive prompt
+4. User reviews output (e.g., `research.md` or `plan.md`)
+5. User chooses to continue, add feedback, or quit
+6. If continuing: script sets state to `running` → starts new pi session
+7. New session continues at next phase
+
+This allows human-in-the-loop review without needing to restart the marathon command.
+
 ## Human Feedback via `human.md`
 
 Write `human.md` at any pause to redirect the agent:
@@ -168,3 +209,69 @@ Request clarification from human. Pauses marathon, prompts in terminal.
 4. **Check human.md** — Human may redirect you
 5. **Follow the plan** — In implement phase, no improvisation
 6. **Commit often** — Preserve progress
+
+## Architecture
+
+The marathon system has three components:
+
+### 1. Bash Wrapper (`~/bin/pi-marathon`)
+- Runs pi in a loop
+- Handles pause prompts (interactive continue/feedback/quit)
+- Manages wait delays for external jobs
+- Handles human feedback questions from agent
+- Environment: `MARATHON_RUNNER_ID`, `MARATHON_TASK_DIR`
+
+### 2. Extension (`~/.pi/agent/extensions/marathon-loop.ts`)
+- Registers `/marathon-*` commands
+- Provides `marathon_wait` and `human_feedback` tools to agent
+- Manages runner state in `~/.pi/marathon-states/<runner-id>.json`
+- Auto-continues or pauses based on task STATE.json
+- Triggers pi shutdown when session completes
+
+### 3. Skill (`/loop`)
+- Compact instructions for the agent
+- Defines phase behavior and outputs
+- Enforces RPI methodology
+- Located at `~/.pi/agent/skills/loop/SKILL.md`
+
+### State Files
+
+| File | Location | Purpose |
+|------|----------|---------|
+| Runner state | `~/.pi/marathon-states/<id>.json` | Tracks active marathon, steer messages, wait requests |
+| Task state | `<task-dir>/STATE.json` | Tracks phase, iteration, paused/running/completed |
+
+### Data Flow
+
+```
+pi-marathon (bash)
+    │
+    ├─► starts pi with MARATHON_RUNNER_ID env
+    │
+    ▼
+marathon-loop.ts (extension)
+    │
+    ├─► on session_start: check runner state, auto-continue or auto-start
+    ├─► on agent_end: check task state, shutdown if done/paused
+    │
+    ▼
+/loop skill (agent instructions)
+    │
+    ├─► read STATE.json, instructions.md, artifacts
+    ├─► execute current phase
+    ├─► write output (research.md, plan.md, work.md)
+    └─► update STATE.json (may set to paused)
+    
+    ▼
+extension detects pause/continue
+    │
+    ├─► if paused: keep runner state, shutdown pi
+    ├─► if running: increment iteration, shutdown pi
+    │
+    ▼
+pi-marathon (bash) loop continues
+    │
+    ├─► if paused: show interactive prompt
+    ├─► if running: restart pi immediately
+    └─► if no state: exit
+```
