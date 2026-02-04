@@ -173,7 +173,7 @@ Parameters:
 			excludeDomains: Type.Optional(Type.Array(Type.String(), { description: "Domains to exclude" })),
 		}),
 
-		async execute(toolCallId, params, onUpdate, ctx, signal) {
+		async execute(toolCallId, params, signal, onUpdate, ctx) {
 			const {
 				query,
 				searchDepth = "basic",

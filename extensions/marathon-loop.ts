@@ -418,7 +418,7 @@ export default function (pi: ExtensionAPI) {
 			minutes: Type.Number({ description: "Number of minutes to wait before next iteration (1-60)" }),
 			reason: Type.String({ description: "Why the wait is needed (e.g., 'waiting for CI pipeline to complete')" }),
 		}),
-		async execute(_toolCallId, params, _onUpdate, ctx) {
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const runnerId = getRunnerId();
 			if (!runnerId) {
 				return {
@@ -466,7 +466,7 @@ Say: "Wait scheduled for ${minutes} minutes. Session ending now." and STOP.`,
 		parameters: Type.Object({
 			question: Type.String({ description: "The question or clarification you need from the human. Be specific and provide context." }),
 		}),
-		async execute(_toolCallId, params, _onUpdate, ctx) {
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const runnerId = getRunnerId();
 			if (!runnerId || !ctx) {
 				return {
