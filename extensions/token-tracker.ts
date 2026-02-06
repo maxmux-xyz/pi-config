@@ -13,8 +13,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
 // Thresholds
-const SOFT_LIMIT = 50_000; // Start warning
-const HARD_LIMIT = 70_000; // Strongly encourage wrapping up
+const SOFT_LIMIT = 80_000; // Start warning
+const HARD_LIMIT = 100_000; // Strongly encourage wrapping up
 
 function formatTokens(tokens: number): string {
 	if (tokens >= 1000) {

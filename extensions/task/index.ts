@@ -252,7 +252,7 @@ async function runTask(
 	};
 
 	const emitUpdate = () => {
-		if (onUpdate) {
+		if (typeof onUpdate === "function") {
 			onUpdate({
 				content: [{ type: "text", text: getFinalOutput(currentResult.messages) || "(running...)" }],
 				details: makeDetails([currentResult]),
@@ -335,7 +335,7 @@ async function runTask(
 				resolve(1);
 			});
 
-			if (signal) {
+			if (signal && typeof signal.addEventListener === "function") {
 				const killProc = () => {
 					wasAborted = true;
 					proc.kill("SIGTERM");
@@ -481,7 +481,7 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				const emitParallelUpdate = () => {
-					if (onUpdate) {
+					if (typeof onUpdate === "function") {
 						const running = allResults.filter((r) => r.exitCode === -1).length;
 						const done = allResults.filter((r) => r.exitCode !== -1).length;
 						onUpdate({
