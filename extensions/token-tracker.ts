@@ -14,7 +14,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 
 // Thresholds
 const SOFT_LIMIT = 80_000; // Start warning
-const HARD_LIMIT = 100_000; // Strongly encourage wrapping up
+const HARD_LIMIT = 110_000; // Strongly encourage wrapping up
 
 function formatTokens(tokens: number): string {
 	if (tokens >= 1000) {
