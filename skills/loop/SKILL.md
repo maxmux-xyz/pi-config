@@ -54,8 +54,12 @@ When the task is done and code was changed:
 2. **NEVER push to `stg` or `main`** — always a feature branch
 3. Commit all changes with a clear message
 4. Push to origin: `git push -u origin <branch-name>`
-5. Create a PR (use `gh pr create` in plan mode) — title and body from instruction.md + progress.md
-6. Then call `loop_done`
+5. Create a PR (use `gh pr create`) — title and body from instruction.md + progress.md
+6. **Wait for CI to pass** before calling `loop_done`:
+   - Check status: `gh pr checks <pr-number> --watch` or poll with `gh run list --branch <branch>`
+   - If CI fails, read the logs (`gh run view <run-id> --log-failed`), fix the issues, push again, and re-check
+   - Only proceed once all checks pass
+7. Then call `loop_done`
 
 If no code was changed, skip git and just call `loop_done`.
 
