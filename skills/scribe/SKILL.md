@@ -7,23 +7,22 @@ description: Create a task directory for pi-loop. Asks clarifying questions, the
 
 Create task directories for `pi-loop` execution.
 
-## Step 1: Understand & Ask Questions
+## Step 1: Understand the Request
 
-Read the user's request. Use `draft_questions` to clarify:
-- What's the specific goal? How will we know it's done?
-- What context/environment? (repo, staging, etc.)
-- Any constraints or approaches to avoid?
-- What does success look like?
-
-**Draft 3-5 focused questions. Wait for `/answer` before proceeding.**
+Read the user's request. If anything is unclear or ambiguous, use `draft_questions` to clarify before proceeding. Only ask if truly needed - if the request is clear, skip to Step 2.
 
 ## Step 2: Create Task Directory
 
 Default location: `~/dev/nebari-docs/tasks/` (or as specified by user)
 
+Directory name format: `YYYYMMDD-HHMMSS-short-description`
+
 ```bash
-mkdir -p <tasks-dir>/<short-description>
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+mkdir -p <tasks-dir>/${TIMESTAMP}-<short-description>
 ```
+
+Example: `20260207-203000-backfill-buzzing-birch`
 
 ## Step 3: Write instruction.md
 
