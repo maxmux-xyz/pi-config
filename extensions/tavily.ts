@@ -141,8 +141,8 @@ async function performSearch(params: TavilySearchParams, signal?: AbortSignal): 
 
 export default function (pi: ExtensionAPI) {
 	pi.registerTool({
-		name: "tavily",
-		label: "Tavily Search",
+		name: "tavily_websearch",
+		label: "Tavily Web Search",
 		description: `Search the web using Tavily's AI-optimized search API.
 
 Use for:

@@ -33,8 +33,6 @@
  * Agent tools:
  *   wait(minutes, reason)                       - Agent requests delay for external process
  *                                                 (for waiting on CI, deployments, etc.)
- *   human_feedback(question)                    - Agent can request clarification from human
- *                                                 (pauses marathon, prompts human, resumes with answer)
  *
  * To stop/pause: Edit STATE.json in task dir or have agent set state to "paused"
  */
@@ -444,61 +442,6 @@ export default function (pi: ExtensionAPI) {
 			},
 		});
 
-		// Tool for the agent to request human feedback/clarification
-		pi.registerTool({
-			name: "human_feedback",
-			label: "Human Feedback",
-			description:
-				"Request clarification or feedback from the human when you're uncertain about how to proceed. Use this when instructions are ambiguous, you need to make a decision that requires human input, or you're unsure about requirements. IMPORTANT: After calling this tool, you MUST immediately end your turn and set STATE.json to paused - the session will end and the human will be prompted.",
-			parameters: Type.Object({
-				question: Type.String({ description: "The question or clarification you need from the human. Be specific and provide context." }),
-			}),
-			async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-				const runnerState = loadRunnerState();
-				if (!runnerState) {
-					return {
-						content: [{ type: "text" as const, text: "No active marathon - feedback request ignored. Ask the human directly in chat." }],
-					};
-				}
-
-				// Save question to runner state
-				saveRunnerState({ ...runnerState, feedbackQuestion: params.question });
-
-				// Set task state to paused
-				const taskState = loadTaskState(runnerState.taskDir, ctx.cwd);
-				if (taskState) {
-					saveTaskState(runnerState.taskDir, ctx.cwd, {
-						...taskState,
-						state: "paused",
-						updatedAt: new Date().toISOString(),
-						note: "Waiting for human feedback",
-					});
-				}
-
-				ctx.ui?.notify?.(`❓ Human feedback requested - marathon pausing`, "info");
-				ctx.ui?.setStatus?.("marathon", "❓ Waiting for human feedback");
-
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: `❓ FEEDBACK REQUESTED: Your question has been saved and the marathon will pause.
-
-Question: "${params.question}"
-
-**CRITICAL: You must STOP NOW.** 
-1. Update work.md with what you've done and note that you're waiting for human feedback
-2. Do not continue with any more work
-3. End your response immediately
-
-The human will see your question and provide an answer. The next iteration will receive their response.
-
-Say: "Waiting for human feedback. Session ending now." and STOP.`,
-						},
-					],
-				};
-			},
-		});
 	}
 
 	// After each agent turn, check if we should continue

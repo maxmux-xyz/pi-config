@@ -119,8 +119,8 @@ async function performSearch(params: WebSearchParams, signal?: AbortSignal): Pro
 
 export default function (pi: ExtensionAPI) {
 	pi.registerTool({
-		name: "websearch",
-		label: "WebSearch",
+		name: "exa_websearch",
+		label: "Exa Web Search",
 		description: `Search the web using Exa AI for real-time information.
 
 Use for:
