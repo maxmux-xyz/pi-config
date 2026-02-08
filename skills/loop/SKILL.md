@@ -46,7 +46,20 @@ If you triggered something long-running (workflow, deploy, build):
 - `bash("sleep 60")` to wait inline — don't exit just to poll
 - Update progress.md before and after sleeping
 
-## 5. End Iteration
+## 5. Git — On Task Completion
+
+When the task is done and code was changed:
+
+1. Create a new branch from current: `git checkout -b <descriptive-branch-name>`
+2. **NEVER push to `stg` or `main`** — always a feature branch
+3. Commit all changes with a clear message
+4. Push to origin: `git push -u origin <branch-name>`
+5. Create a PR (use `gh pr create` in plan mode) — title and body from instruction.md + progress.md
+6. Then call `loop_done`
+
+If no code was changed, skip git and just call `loop_done`.
+
+## 6. End Iteration
 
 Always call one of these tools when done:
 
