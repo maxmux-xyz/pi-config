@@ -1,5 +1,53 @@
 # Critical Rules
 
+## Parallel Tasks - VERIFY FIRST
+
+Before running parallel tasks (using `task` tool with multiple tasks, or tmux):
+
+1. **Run ONE task first** as a test
+2. **Verify the output** is complete, not truncated, and actually useful
+3. **Adjust approach if needed** (e.g., write to files instead of returning large output)
+4. **Only then parallelize** the remaining tasks
+
+This prevents wasting time on parallel work that produces unusable/truncated results.
+
+```
+❌ Bad:  Immediately spawn 5 parallel tasks → wait 10 min → truncated output
+✅ Good: Run 1 task → verify output → then run remaining 4 in parallel
+```
+
+## Task Tool vs Tmux - When to Use Which
+
+| | `task` tool | `tmux` + `pi -p` |
+|---|-------------|------------------|
+| **Best for** | Quick, light tasks | Heavy, long-running tasks |
+| **Output** | Returned directly (can truncate!) | Write to files (guaranteed full capture) |
+| **Concurrency** | Max 4 concurrent | Unlimited |
+| **Setup** | Simple - just call tool | More complex - bash commands |
+| **Overhead** | Higher (managed subagents) | Lower (direct processes) |
+
+**Use `task` tool when:**
+- Tasks are quick (< 1 min)
+- Output is small/bounded
+- Convenience matters more than control
+
+**Use `tmux` when:** (load `/tmux` skill)
+- Tasks are heavy/long-running (db queries, kubectl, API calls)
+- Output might be large - write to `/tmp/` files
+- Need guaranteed full output capture
+- Running more than 4 parallel tasks
+- Want to monitor progress live (`tmux attach`)
+
+```bash
+# tmux pattern for heavy tasks - ALWAYS write to files
+tmux new-session -d -s task1 "pi -p 'Do X and write full results to /tmp/task1.md'"
+tmux new-session -d -s task2 "pi -p 'Do Y and write full results to /tmp/task2.md'"
+
+# Wait then read
+while tmux has-session -t task1 2>/dev/null; do sleep 5; done
+cat /tmp/task1.md
+```
+
 ## Git Operations - NEVER DO THESE UNLESS EXPLICITLY ASKED
 
 - **NEVER** run `git add`, `git commit`, `git push`
