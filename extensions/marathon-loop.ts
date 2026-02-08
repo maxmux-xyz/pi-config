@@ -408,101 +408,90 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// Tool for the agent to request a wait before next iteration
-	pi.registerTool({
-		name: "marathon_wait",
-		label: "Marathon Wait",
-		description:
-			"Request a delay before the next marathon iteration. Use this when you've triggered an external job (CI, deployment, etc.) and need to wait for it to complete before continuing. IMPORTANT: After calling this tool, you MUST immediately end your turn - do not continue with more work. The session will end and the runner will wait before restarting.",
-		parameters: Type.Object({
-			minutes: Type.Number({ description: "Number of minutes to wait before next iteration (1-60)" }),
-			reason: Type.String({ description: "Why the wait is needed (e.g., 'waiting for CI pipeline to complete')" }),
-		}),
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const runnerId = getRunnerId();
-			if (!runnerId) {
+	// Only register marathon tools when actually running under pi-marathon
+	// This prevents agents from trying to use them outside of marathon context
+	if (getRunnerId()) {
+		// Tool for the agent to request a wait before next iteration
+		pi.registerTool({
+			name: "marathon_wait",
+			label: "Marathon Wait",
+			description:
+				"Request a delay before the next marathon iteration. Use this when you've triggered an external job (CI, deployment, etc.) and need to wait for it to complete before continuing. IMPORTANT: After calling this tool, you MUST immediately end your turn - do not continue with more work. The session will end and the runner will wait before restarting.",
+			parameters: Type.Object({
+				minutes: Type.Number({ description: "Number of minutes to wait before next iteration (1-60)" }),
+				reason: Type.String({ description: "Why the wait is needed (e.g., 'waiting for CI pipeline to complete')" }),
+			}),
+			async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+				const runnerState = loadRunnerState();
+				if (!runnerState) {
+					return {
+						content: [{ type: "text" as const, text: "No active marathon - wait request ignored" }],
+					};
+				}
+
+				const minutes = Math.max(1, Math.min(60, params.minutes)); // Clamp 1-60
+				const waitSeconds = minutes * 60;
+
+				saveRunnerState({ ...runnerState, waitSeconds });
+
+				ctx.ui?.notify?.(`⏳ Marathon will wait ${minutes}m before next iteration: ${params.reason}`, "info");
+				ctx.ui?.setStatus?.("marathon", `⏳ Will wait ${minutes}m after this iteration`);
+
 				return {
-					content: [{ type: "text" as const, text: "Not running under pi-marathon - wait request ignored" }],
-				};
-			}
-
-			const runnerState = loadRunnerState();
-			if (!runnerState) {
-				return {
-					content: [{ type: "text" as const, text: "No active marathon - wait request ignored" }],
-				};
-			}
-
-			const minutes = Math.max(1, Math.min(60, params.minutes)); // Clamp 1-60
-			const waitSeconds = minutes * 60;
-
-			saveRunnerState({ ...runnerState, waitSeconds });
-
-			ctx.ui?.notify?.(`⏳ Marathon will wait ${minutes}m before next iteration: ${params.reason}`, "info");
-			ctx.ui?.setStatus?.("marathon", `⏳ Will wait ${minutes}m after this iteration`);
-
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text: `⏳ WAIT SCHEDULED: ${minutes} minute(s) before next marathon iteration.
+					content: [
+						{
+							type: "text" as const,
+							text: `⏳ WAIT SCHEDULED: ${minutes} minute(s) before next marathon iteration.
 Reason: ${params.reason}
 
 **CRITICAL: You must STOP NOW.** Do not continue with any more work. End your response immediately so the session can terminate and the wait can begin.
 
 Say: "Wait scheduled for ${minutes} minutes. Session ending now." and STOP.`,
-					},
-				],
-			};
-		},
-	});
-
-	// Tool for the agent to request human feedback/clarification
-	pi.registerTool({
-		name: "human_feedback",
-		label: "Human Feedback",
-		description:
-			"Request clarification or feedback from the human when you're uncertain about how to proceed. Use this when instructions are ambiguous, you need to make a decision that requires human input, or you're unsure about requirements. IMPORTANT: After calling this tool, you MUST immediately end your turn and set STATE.json to paused - the session will end and the human will be prompted.",
-		parameters: Type.Object({
-			question: Type.String({ description: "The question or clarification you need from the human. Be specific and provide context." }),
-		}),
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const runnerId = getRunnerId();
-			if (!runnerId || !ctx) {
-				return {
-					content: [{ type: "text" as const, text: "Not running under pi-marathon - feedback request ignored. Ask the human directly in chat." }],
+						},
+					],
 				};
-			}
+			},
+		});
 
-			const runnerState = loadRunnerState();
-			if (!runnerState) {
+		// Tool for the agent to request human feedback/clarification
+		pi.registerTool({
+			name: "human_feedback",
+			label: "Human Feedback",
+			description:
+				"Request clarification or feedback from the human when you're uncertain about how to proceed. Use this when instructions are ambiguous, you need to make a decision that requires human input, or you're unsure about requirements. IMPORTANT: After calling this tool, you MUST immediately end your turn and set STATE.json to paused - the session will end and the human will be prompted.",
+			parameters: Type.Object({
+				question: Type.String({ description: "The question or clarification you need from the human. Be specific and provide context." }),
+			}),
+			async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+				const runnerState = loadRunnerState();
+				if (!runnerState) {
+					return {
+						content: [{ type: "text" as const, text: "No active marathon - feedback request ignored. Ask the human directly in chat." }],
+					};
+				}
+
+				// Save question to runner state
+				saveRunnerState({ ...runnerState, feedbackQuestion: params.question });
+
+				// Set task state to paused
+				const taskState = loadTaskState(runnerState.taskDir, ctx.cwd);
+				if (taskState) {
+					saveTaskState(runnerState.taskDir, ctx.cwd, {
+						...taskState,
+						state: "paused",
+						updatedAt: new Date().toISOString(),
+						note: "Waiting for human feedback",
+					});
+				}
+
+				ctx.ui?.notify?.(`❓ Human feedback requested - marathon pausing`, "info");
+				ctx.ui?.setStatus?.("marathon", "❓ Waiting for human feedback");
+
 				return {
-					content: [{ type: "text" as const, text: "No active marathon - feedback request ignored. Ask the human directly in chat." }],
-				};
-			}
-
-			// Save question to runner state
-			saveRunnerState({ ...runnerState, feedbackQuestion: params.question });
-
-			// Set task state to paused
-			const taskState = loadTaskState(runnerState.taskDir, ctx.cwd);
-			if (taskState) {
-				saveTaskState(runnerState.taskDir, ctx.cwd, {
-					...taskState,
-					state: "paused",
-					updatedAt: new Date().toISOString(),
-					note: "Waiting for human feedback",
-				});
-			}
-
-			ctx.ui?.notify?.(`❓ Human feedback requested - marathon pausing`, "info");
-			ctx.ui?.setStatus?.("marathon", "❓ Waiting for human feedback");
-
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text: `❓ FEEDBACK REQUESTED: Your question has been saved and the marathon will pause.
+					content: [
+						{
+							type: "text" as const,
+							text: `❓ FEEDBACK REQUESTED: Your question has been saved and the marathon will pause.
 
 Question: "${params.question}"
 
@@ -514,11 +503,12 @@ Question: "${params.question}"
 The human will see your question and provide an answer. The next iteration will receive their response.
 
 Say: "Waiting for human feedback. Session ending now." and STOP.`,
-					},
-				],
-			};
-		},
-	});
+						},
+					],
+				};
+			},
+		});
+	}
 
 	// After each agent turn, check if we should continue
 	pi.on("agent_end", async (_event, ctx) => {
