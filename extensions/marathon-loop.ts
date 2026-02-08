@@ -31,7 +31,7 @@
  *   /marathon-steer <message>                   - Inject guidance for next iteration
  *
  * Agent tools:
- *   marathon_wait(minutes, reason)              - Agent can request delay before next iteration
+ *   wait(minutes, reason)                       - Agent requests delay for external process
  *                                                 (for waiting on CI, deployments, etc.)
  *   human_feedback(question)                    - Agent can request clarification from human
  *                                                 (pauses marathon, prompts human, resumes with answer)
@@ -413,40 +413,31 @@ export default function (pi: ExtensionAPI) {
 	if (getRunnerId()) {
 		// Tool for the agent to request a wait before next iteration
 		pi.registerTool({
-			name: "marathon_wait",
-			label: "Marathon Wait",
+			name: "wait",
+			label: "Wait",
 			description:
-				"Request a delay before the next marathon iteration. Use this when you've triggered an external job (CI, deployment, etc.) and need to wait for it to complete before continuing. IMPORTANT: After calling this tool, you MUST immediately end your turn - do not continue with more work. The session will end and the runner will wait before restarting.",
+				"Request a delay when waiting for an external process (CI, deployment, build, etc.). After calling, end your turn immediately.",
 			parameters: Type.Object({
-				minutes: Type.Number({ description: "Number of minutes to wait before next iteration (1-60)" }),
-				reason: Type.String({ description: "Why the wait is needed (e.g., 'waiting for CI pipeline to complete')" }),
+				minutes: Type.Number({ description: "Minutes to wait (1-60)" }),
+				reason: Type.String({ description: "What you're waiting for" }),
 			}),
 			async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-				const runnerState = loadRunnerState();
-				if (!runnerState) {
-					return {
-						content: [{ type: "text" as const, text: "No active marathon - wait request ignored" }],
-					};
-				}
-
 				const minutes = Math.max(1, Math.min(60, params.minutes)); // Clamp 1-60
 				const waitSeconds = minutes * 60;
 
-				saveRunnerState({ ...runnerState, waitSeconds });
+				// If marathon is active, register the wait with the runner
+				const runnerState = loadRunnerState();
+				if (runnerState) {
+					saveRunnerState({ ...runnerState, waitSeconds });
+				}
 
-				ctx.ui?.notify?.(`⏳ Marathon will wait ${minutes}m before next iteration: ${params.reason}`, "info");
-				ctx.ui?.setStatus?.("marathon", `⏳ Will wait ${minutes}m after this iteration`);
+				ctx.ui?.notify?.(`⏳ Wait requested: ${minutes}m - ${params.reason}`, "info");
 
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: `⏳ WAIT SCHEDULED: ${minutes} minute(s) before next marathon iteration.
-Reason: ${params.reason}
-
-**CRITICAL: You must STOP NOW.** Do not continue with any more work. End your response immediately so the session can terminate and the wait can begin.
-
-Say: "Wait scheduled for ${minutes} minutes. Session ending now." and STOP.`,
+							text: `⏳ Wait scheduled: ${minutes} minute(s). Reason: ${params.reason}`,
 						},
 					],
 				};
