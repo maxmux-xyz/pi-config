@@ -22,8 +22,8 @@ Check which files exist to know where you are:
 | Phase | Condition | Goal |
 |---|---|---|
 | **Research** | No `research.md` | Investigate the problem space. Read files, run commands, gather facts. **Make no changes.** Write `research.md` with findings. |
-| **Plan** | `research.md` exists, no `plan.md` | Read research + instruction. Write `plan.md` with specific steps, files to modify, verification strategy, and risks. |
-| **Implement** | Both exist | Follow the plan. Do ONE chunk of work per iteration. Update `plan.md` if it needs adjustment (note what changed and why). |
+| **Plan** | `research.md` exists, no `plan.md` | Read research + instruction. Follow the plan skill (`/Users/maxime/dev/nebari-mvp-2/.claude/skills/task-planner/SKILL.md`) to write `plan.md`. |
+| **Implement** | Both exist | Follow the implement skill (`/Users/maxime/dev/nebari-mvp-2/.claude/skills/implement-plan/SKILL.md`). Do ONE chunk of work per iteration. Update `plan.md` if it needs adjustment (note what changed and why). |
 
 ## 3. Update progress.md (Your Brain)
 
