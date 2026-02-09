@@ -1,5 +1,12 @@
 # Critical Rules
 
+## Working Directory - ALWAYS USE `pwd`
+
+- **NEVER** make changes in directories outside the current working directory (`pwd`)
+- If the user launched the session in `/Users/maxime/dev/nebari-mvp-1`, ALL file edits, git operations, and commands must happen there
+- Do NOT `cd` into sibling repos or other checkouts of the same repo (e.g., `/Users/maxime/dev/nebari-mvp` vs `/Users/maxime/dev/nebari-mvp-1`)
+- If a PR URL references a different repo/org, still make changes in `pwd` — that's where the user's working branch is
+
 ## Parallel Tasks - VERIFY FIRST
 
 Before running parallel tasks (using `task` tool with multiple tasks, or tmux):

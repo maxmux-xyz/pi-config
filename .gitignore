@@ -8,3 +8,6 @@ sessions/
 extensions/node_modules/
 
 PLAN.md
+
+# Managed binaries (auto-downloaded by pi)
+bin/
