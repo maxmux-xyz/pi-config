@@ -23,6 +23,11 @@ export default function (pi: ExtensionAPI) {
       summary: Type.String({ description: "What you accomplished this iteration" }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      // abort() force-stops the current agent turn so the LLM doesn't keep working.
+      // shutdown() sets the flag so pi exits once the turn ends (agent_end event).
+      // Without abort(), shutdown is deferred until the turn naturally ends — which
+      // may never happen because the LLM sees a normal tool result and keeps going.
+      ctx.abort();
       ctx.shutdown();
       return {
         content: [{ type: "text", text: `Next iteration: ${params.summary}` }],
@@ -44,6 +49,7 @@ export default function (pi: ExtensionAPI) {
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const donePath = path.join(params.taskDir, "DONE");
       fs.writeFileSync(donePath, params.summary, "utf-8");
+      ctx.abort();
       ctx.shutdown();
       return {
         content: [{ type: "text", text: `✅ Task complete: ${params.summary}` }],
@@ -66,6 +72,7 @@ export default function (pi: ExtensionAPI) {
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const exitPath = path.join(params.taskDir, "EXIT");
       fs.writeFileSync(exitPath, params.reason, "utf-8");
+      ctx.abort();
       ctx.shutdown();
       return {
         content: [{ type: "text", text: `⏸️ Terminated: ${params.reason}` }],
