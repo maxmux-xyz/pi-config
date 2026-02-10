@@ -7,6 +7,25 @@ description: Execute a task iteration in pi-loop. Read task files, work in small
 
 You are running in `pi-loop` — an iterative system with fresh context each run. You lose all memory between iterations.
 
+## Critical Rule: ONE Phase Per Iteration
+
+**Each iteration does exactly ONE phase of work, then exits via `loop_next` or `loop_done`.**
+
+You MUST NOT combine phases. After writing `research.md` → stop. After writing `plan.md` → stop. After one implementation chunk → stop. The loop harness will restart you with fresh context for the next phase.
+
+This is the designed workflow:
+```
+Iteration 1: Research       → write research.md           → loop_next
+Iteration 2: Plan           → write plan.md               → loop_next
+Iteration 3: Implement      → one chunk of work            → loop_next
+Iteration 4: Implement      → next chunk                   → loop_next
+...
+Iteration N: Git/PR         → branch, commit, push, PR     → loop_next
+Iteration N+1: Review       → self-review, write review.md → loop_next
+Iteration N+2: Address      → fix critical issues, push    → loop_next
+Iteration N+3: Review       → re-review, clean             → loop_done
+```
+
 ## 1. Read State
 
 Always start by reading these files from the task directory:
@@ -15,21 +34,95 @@ Always start by reading these files from the task directory:
 2. `progress.md` — What's been done (if exists)
 3. `GUIDE.md` — Human guidance (if exists). **High priority** — follow it, then delete the file.
 
-## 2. Determine Phase
+## 2. Determine Phase and Execute It
 
-Check which files exist to know where you are:
+Check which files exist to decide your ONE phase for this iteration:
 
-| Phase | Condition | Goal |
-|---|---|---|
-| **Research** | No `research.md` | Investigate the problem space. Read files, run commands, gather facts. **Make no changes.** Write `research.md` with findings. |
-| **Plan** | `research.md` exists, no `plan.md` | Read research + instruction. Follow the plan skill (`/Users/maxime/dev/nebari-mvp-2/.claude/skills/task-planner/SKILL.md`) to write `plan.md`. |
-| **Implement** | Both exist | Follow the implement skill (`/Users/maxime/dev/nebari-mvp-2/.claude/skills/implement-plan/SKILL.md`). Do ONE chunk of work per iteration. Update `plan.md` if it needs adjustment (note what changed and why). |
+### Research (no `research.md` exists)
+Investigate the problem space. Read files, run commands, gather facts. **Make no code changes.** Write `research.md` with findings. Then update `progress.md` and call **`loop_next`**.
+
+### Plan (`research.md` exists, no `plan.md`)
+Read research + instruction. Follow the plan skill (`/Users/maxime/dev/nebari-mvp-2/.claude/skills/task-planner/SKILL.md`) to write `plan.md`. Then update `progress.md` and call **`loop_next`**.
+
+### Implement (`research.md` and `plan.md` both exist, no `pr.md`)
+Follow the implement skill (`/Users/maxime/dev/nebari-mvp-2/.claude/skills/implement-plan/SKILL.md`). Do **ONE chunk** of work — a single logical step from the plan. Update `plan.md` if needed (note what changed and why). Then update `progress.md` and call **`loop_next`**.
+
+When all implementation chunks are done and verified (tests pass, lint passes), the **next iteration** is the Git/PR phase.
+
+### Git/PR (implementation complete per progress.md, no `pr.md`)
+Create branch, commit, push, create PR. See section 5 for details. Write **`pr.md`** in the task directory with:
+```markdown
+# PR
+- number: <PR_NUMBER>
+- url: <PR_URL>
+- branch: <BRANCH_NAME>
+- base: <BASE_BRANCH>
+- repo: <OWNER/REPO>
+```
+Then update `progress.md` and call **`loop_next`**. Do NOT call `loop_done` — the review cycle comes next.
+
+### Review (`pr.md` exists, no `review.md`)
+Self-review your own PR. This catches bugs, style issues, and logic errors before a human sees it.
+
+1. **Fetch the diff:**
+   ```bash
+   gh pr diff <PR_NUMBER> > /tmp/pr-<PR_NUMBER>.diff
+   ```
+
+2. **Load project standards** — read any of these that exist in the working repo:
+   - `AGENTS.md`, `CODESTYLE.md`, `BEST_PRACTICES.md`
+   - `.claude/knowledge/` directory
+
+3. **Analyze the diff** looking for:
+   - **BUG** — correctness issues: logic errors, missing error handling, race conditions, type errors
+   - **SUGGESTION** — meaningful improvements: wrong abstraction, duplication, missing edge cases
+   - **nit** — minor style: naming, dead code, formatting
+
+4. **Write `review.md`** in the task directory:
+   ```markdown
+   # Review
+
+   ## Summary
+   <one paragraph assessment — is this solid? what's the risk level?>
+
+   ## Findings
+
+   ### 1. [BUG] path/to/file.py:42
+   > <the code line>
+   <explanation of the issue and suggested fix>
+
+   ### 2. [SUGGESTION] path/to/file.py:87
+   > <the code line>
+   <explanation>
+
+   ### 3. [nit] path/to/file.py:15
+   > <the code line>
+   <explanation>
+
+   ## Verdict: NEEDS_CHANGES | CLEAN
+   ```
+
+5. **If verdict is CLEAN** (no BUGs, no SUGGESTIONs — nits alone don't count): skip writing `review.md`, update `progress.md`, and call **`loop_done`**.
+
+6. **If verdict is NEEDS_CHANGES**: write `review.md`, update `progress.md`, and call **`loop_next`**.
+
+### Address Review (`review.md` exists)
+Fix the issues found in the review.
+
+1. Read `review.md` — focus on **BUG** and **SUGGESTION** items. Nits are optional.
+2. Fix the issues in the code.
+3. Run tests and lint to verify nothing broke.
+4. Commit and push to the existing PR branch.
+5. **Delete `review.md`** from the task directory.
+6. Update `progress.md` with what you fixed and why.
+7. Call **`loop_next`** — this sends you back to the Review phase for re-review.
 
 ## 3. Update progress.md (Your Brain)
 
-`progress.md` is your ONLY memory between iterations. **Write liberally** — don't be shy. An automated process compresses it when it gets too large, so there's no penalty for being thorough.
+**Update `progress.md` every iteration, right before calling `loop_next`/`loop_done`.** This is your ONLY memory between iterations.
 
-Write it like a lab notebook. Record everything:
+Write liberally — an automated process compresses it when it gets too large, so there's no penalty for being thorough. Write it like a lab notebook:
+
 - What you tried, the exact commands, and their output
 - What worked and what didn't (and why you think it failed)
 - Decisions and the reasoning behind them
@@ -46,27 +139,23 @@ If you triggered something long-running (workflow, deploy, build):
 - `bash("sleep 60")` to wait inline — don't exit just to poll
 - Update progress.md before and after sleeping
 
-## 5. Git — On Task Completion
+## 5. Git/PR Details
 
-When the task is done and code was changed:
+When creating the branch and PR:
 
 1. Create a new branch from current: `git checkout -b <descriptive-branch-name>`
 2. **NEVER push to `stg` or `main`** — always a feature branch
 3. Commit all changes with a clear message
 4. Push to origin: `git push -u origin <branch-name>`
-5. Create a PR (use `gh pr create`) — title and body from instruction.md + progress.md
-6. **Wait for CI to pass** before calling `loop_done`:
-   - Check status: `gh pr checks <pr-number> --watch` or poll with `gh run list --branch <branch>`
-   - If CI fails, read the logs (`gh run view <run-id> --log-failed`), fix the issues, push again, and re-check
-   - Only proceed once all checks pass
-7. Then call `loop_done`
+5. Create a PR: `gh pr create` — title and body from instruction.md + progress.md
+6. Write `pr.md` in the task directory (see Git/PR phase above)
 
-If no code was changed, skip git and just call `loop_done`.
+Do NOT wait for CI here — the review phase will catch issues. If CI fails, you'll see it during review.
 
 ## 6. End Iteration
 
-Always call one of these tools when done:
+Every iteration MUST end with exactly one of these calls:
 
-- **`loop_next`** — More work remains. Loop restarts with fresh context.
-- **`loop_done`** — Task complete, all requirements met. Stops the loop.
+- **`loop_next`** — This phase is done but the task isn't finished. **This is the most common ending.** Use it after Research, Plan, each Implement chunk, Git/PR, Review (with findings), and Address Review.
+- **`loop_done`** — Task fully complete: PR is up and review is clean. **Only use when Review verdict is CLEAN.**
 - **`loop_terminate`** — Blocked, need human help. Stops the loop.
