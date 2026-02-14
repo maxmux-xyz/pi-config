@@ -13,7 +13,11 @@ You are running in `pi-loop` — an iterative system with fresh context each run
 
 You MUST NOT combine phases. After writing `research.md` → stop. After writing `plan.md` → stop. After one implementation chunk → stop. The loop harness will restart you with fresh context for the next phase.
 
-This is the designed workflow:
+### Two workflows
+
+Determine which workflow applies based on `instruction.md` and `plan.md`. If the task involves code changes → **Code workflow**. If the task is operational (trigger jobs, run backfills, execute commands, wait for results) → **Ops workflow**.
+
+**Code workflow** (produces a PR):
 ```
 Iteration 1: Research       → write research.md           → loop_next
 Iteration 2: Plan           → write plan.md               → loop_next
@@ -26,6 +30,16 @@ Iteration N+2: Address      → fix critical issues, push    → loop_next
 Iteration N+3: Review       → re-review, clean             → loop_done
 ```
 
+**Ops workflow** (no code changes, no PR):
+```
+Iteration 1: Research       → write research.md           → loop_next
+Iteration 2: Plan           → write plan.md               → loop_next
+Iteration 3: Execute        → run commands / trigger jobs   → loop_next
+Iteration 4: Execute        → wait / poll / verify          → loop_next
+...
+Iteration N: Execute        → confirm done, write results   → loop_done
+```
+
 ## 1. Read State
 
 Always start by reading these files from the task directory:
@@ -33,6 +47,7 @@ Always start by reading these files from the task directory:
 1. `instruction.md` — The task (always exists)
 2. `progress.md` — What's been done (if exists)
 3. `GUIDE.md` — Human guidance (if exists). **High priority** — follow it, then delete the file.
+4. **Any other `.md` files** — The task directory may contain additional context files (e.g., `RISK.md`, `NOTE.md`, `CONTEXT.md`). **Be curious** — list the task directory and read any `.md` files you don't recognize. They were placed there for a reason.
 
 ## 2. Determine Phase and Execute It
 
@@ -42,14 +57,15 @@ Check which files exist to decide your ONE phase for this iteration:
 Investigate the problem space. Read files, run commands, gather facts. **Make no code changes.** Write `research.md` with findings. Then update `progress.md` and call **`loop_next`**.
 
 ### Plan (`research.md` exists, no `plan.md`)
-Read research + instruction. Follow the plan skill (`/Users/maxime/dev/nebari-mvp-2/.claude/skills/task-planner/SKILL.md`) to write `plan.md`. Then update `progress.md` and call **`loop_next`**.
+Read research + instruction. Follow the plan skill (`/Users/maxime/dev/nebari-mvp/agents/skills/task-planner/SKILL.md`) to write `plan.md`. Then update `progress.md` and call **`loop_next`**.
 
-### Implement (`research.md` and `plan.md` both exist, no `pr.md`)
-Follow the implement skill (`/Users/maxime/dev/nebari-mvp-2/.claude/skills/implement-plan/SKILL.md`). Do **ONE chunk** of work — a single logical step from the plan. Update `plan.md` if needed (note what changed and why). Then update `progress.md` and call **`loop_next`**.
+### Implement / Execute (`research.md` and `plan.md` both exist, work remains)
 
-When all implementation chunks are done and verified (tests pass, lint passes), the **next iteration** is the Git/PR phase.
+**Code workflow →** Follow the implement skill (`/Users/maxime/dev/nebari-mvp/agents/skills/implement-plan/SKILL.md`). Do **ONE chunk** of work — a single logical step from the plan. Update `plan.md` if needed (note what changed and why). Then update `progress.md` and call **`loop_next`**. When all implementation chunks are done and verified (tests pass, lint passes), the **next iteration** is the Git/PR phase.
 
-### Git/PR (implementation complete per progress.md, no `pr.md`)
+**Ops workflow →** Execute the next step from the plan: trigger jobs, run commands, call APIs, poll for completion, verify results. Do **ONE logical step** per iteration. If something is long-running, wait inline — don't exit just to poll. Don't hesitate to sleep long (`bash("sleep 300")`, `bash("sleep 600")`) — some jobs take a while and that's fine. Update `progress.md` with commands run, outputs, and status. Call **`loop_next`**. When all steps are done and verified, call **`loop_done`** directly — no Git/PR or Review phases.
+
+### Git/PR (Code workflow only: implementation complete per progress.md, no `pr.md`)
 Create branch, commit, push, create PR. See section 5 for details. Write **`pr.md`** in the task directory with:
 ```markdown
 # PR
@@ -61,7 +77,7 @@ Create branch, commit, push, create PR. See section 5 for details. Write **`pr.m
 ```
 Then update `progress.md` and call **`loop_next`**. Do NOT call `loop_done` — the review cycle comes next.
 
-### Review (`pr.md` exists, no `review.md`)
+### Review (Code workflow only: `pr.md` exists, no `review.md`)
 Self-review your own PR. This catches bugs, style issues, and logic errors before a human sees it.
 
 1. **Fetch the diff:**
@@ -106,7 +122,7 @@ Self-review your own PR. This catches bugs, style issues, and logic errors befor
 
 6. **If verdict is NEEDS_CHANGES**: write `review.md`, update `progress.md`, and call **`loop_next`**.
 
-### Address Review (`review.md` exists)
+### Address Review (Code workflow only: `review.md` exists)
 Fix the issues found in the review.
 
 1. Read `review.md` — focus on **BUG** and **SUGGESTION** items. Nits are optional.
@@ -135,8 +151,8 @@ Good: `"Ran SELECT count(*) FROM users WHERE active=true → 4,523. Expected ~5k
 
 ## 4. Waiting
 
-If you triggered something long-running (workflow, deploy, build):
-- `bash("sleep 60")` to wait inline — don't exit just to poll
+If you triggered something long-running (workflow, deploy, build, backfill):
+- Wait inline — don't exit just to poll. Don't hesitate to sleep long: `bash("sleep 300")`, `bash("sleep 600")`. Some jobs take minutes or hours and that's fine.
 - Update progress.md before and after sleeping
 
 ## 5. Git/PR Details
@@ -157,5 +173,5 @@ Do NOT wait for CI here — the review phase will catch issues. If CI fails, you
 Every iteration MUST end with exactly one of these calls:
 
 - **`loop_next`** — This phase is done but the task isn't finished. **This is the most common ending.** Use it after Research, Plan, each Implement chunk, Git/PR, Review (with findings), and Address Review.
-- **`loop_done`** — Task fully complete: PR is up and review is clean. **Only use when Review verdict is CLEAN.**
+- **`loop_done`** — Task fully complete. **Code workflow:** PR is up and review is clean. **Ops workflow:** all steps executed and verified.
 - **`loop_terminate`** — Blocked, need human help. Stops the loop.

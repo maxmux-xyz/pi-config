@@ -13,7 +13,7 @@ Read the user's request. If anything is unclear or ambiguous, use `draft_questio
 
 ## Step 2: Create Task Directory
 
-Default location: `/Users/maxime/dev/nebari-mvp/tasks/` — this is the **only** task directory. Always save new tasks here.
+Default location: `/Users/maxime/dev/nebari-docs/tasks/` — this is the **only** task directory. Always save new tasks here.
 
 Directory name format: `YYYYMMDD-HHMMSS-short-description`
 
