@@ -112,11 +112,7 @@ List files in `TODO/` (not `TODO/archive/`). For each `.md` file:
 
    ## Notes
    <Constraints, hints from research>
-
-   #GO
    ```
-
-   **Important:** The file must end with `#GO` on its own line. This signals to `pi-loop-watch` that the task is ready to run. The watcher strips it before launching.
 
 5. **Move the TODO file** to `TODO/archive/`:
    ```bash

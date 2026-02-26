@@ -7,7 +7,7 @@ End-to-end workflow for getting work done with agents.
  ─────                          ─────                           ─────
  Write TODO item          ─→                                    TODO file
  nebari-todo-watch        ─→    Research codebase, create task   TODO → INPROGRESS
-                                instruction.md ends with #GO
+ Human reviews instruction ─→   Appends #GO to instruction.md   (human gate)
  pi-loop-watch            ─→    Detects #GO, launches in tmux   task running
                                 Research → Plan → Implement →
                                 Git branch → PR → Self-review
@@ -43,9 +43,12 @@ The agent reads TODO files ending with `#GO`, and for each item:
 
 ### 3. Run the task
 
-Tasks created by `nebari-todo` have `instruction.md` ending with `#GO` — ready to run automatically.
+Tasks created by `nebari-todo` need a human review. Once you're happy with `instruction.md`, append `#GO` on its own line to mark it ready.
 
 ```bash
+# Mark a task as ready to run
+echo '#GO' >> /Users/maxime/dev/nebari-docs/tasks/20260214-180000-fix-auth-timeout/instruction.md
+
 # Automatic: watcher picks up #GO tasks and runs them in tmux
 pi-loop-watch             # polls every 60s, max 3 concurrent
 pi-loop-watch 30 2        # poll every 30s, max 2 concurrent
@@ -116,7 +119,7 @@ pi-q <task-dir> -m ""   # Ask questions about a specific task
 
 | File | Created by | Meaning |
 |---|---|---|
-| `instruction.md` ending `#GO` | nebari-todo | Task is ready to run — pi-loop-watch picks it up |
+| `instruction.md` ending `#GO` | Human | Task is reviewed and ready to run — pi-loop-watch picks it up |
 | `LOCK` | Agent (pi-loop) | Agent is currently running |
 | `DONE` | Agent (pi-loop) | Agent finished work |
 | `DONE.md` | Human | Human verified — ready to auto-archive |
