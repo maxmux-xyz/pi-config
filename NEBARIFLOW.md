@@ -6,12 +6,14 @@ End-to-end workflow for getting work done with agents.
  Human                          Agent                           State
  ─────                          ─────                           ─────
  Write TODO item          ─→                                    TODO file
- Run nebari-todo          ─→    Research codebase, create task   TODO → INPROGRESS
- Run pi-loop <task>       ─→    Research → Plan → Implement →   task dir (iterations)
+ nebari-todo-watch        ─→    Research codebase, create task   TODO → INPROGRESS
+                                instruction.md ends with #GO
+ pi-loop-watch            ─→    Detects #GO, launches in tmux   task running
+                                Research → Plan → Implement →
                                 Git branch → PR → Self-review
                                 Agent creates DONE when finished
  Human verifies work      ─→    touch DONE.md in task dir       (human approval)
- Run nebari-todo          ─→    Detect DONE.md, auto-archive    INPROGRESS → ARCHIVE
+ nebari-todo-watch        ─→    Detect DONE.md, auto-archive    INPROGRESS → ARCHIVE
 ```
 
 ## Step by Step
@@ -41,12 +43,18 @@ The agent reads TODO files ending with `#GO`, and for each item:
 
 ### 3. Run the task
 
+Tasks created by `nebari-todo` have `instruction.md` ending with `#GO` — ready to run automatically.
+
 ```bash
-# Run a specific task
+# Automatic: watcher picks up #GO tasks and runs them in tmux
+pi-loop-watch             # polls every 60s, max 3 concurrent
+pi-loop-watch 30 2        # poll every 30s, max 2 concurrent
+
+# Manual: run a specific task
 pi-loop /Users/maxime/dev/nebari-docs/tasks/20260214-180000-fix-auth-timeout
 
-# Or let pi-loop pick the next available task
-pi-loop /Users/maxime/dev/nebari-docs/tasks/
+# Watch a running task
+tmux attach -t pi-loop-20260214-180000-fix-auth-timeout
 ```
 
 The agent works in iterations (fresh context each run):
@@ -108,10 +116,11 @@ pi-q <task-dir> -m ""   # Ask questions about a specific task
 
 | File | Created by | Meaning |
 |---|---|---|
+| `instruction.md` ending `#GO` | nebari-todo | Task is ready to run — pi-loop-watch picks it up |
+| `LOCK` | Agent (pi-loop) | Agent is currently running |
 | `DONE` | Agent (pi-loop) | Agent finished work |
 | `DONE.md` | Human | Human verified — ready to auto-archive |
 | `EXIT` | Agent (pi-loop) | Agent is stuck, needs help |
-| `LOCK` | Agent (pi-loop) | Agent is currently running |
 | `GUIDE.md` | Human | Feedback for the agent (read and deleted next iteration) |
 
 ## Commands
@@ -123,6 +132,8 @@ pi-q <task-dir> -m ""   # Ask questions about a specific task
 | `nebari-todo -h` | Status at a glance |
 | `nebari-todo-watch` | Continuous polling — runs nebari-todo when work detected |
 | `nebari-todo-watch 30` | Same, with custom interval (default 60s) |
-| `pi-loop <task-dir>` | Run agent on a task |
-| `pi-loop <tasks-dir>` | Run next available task |
+| `pi-loop-watch` | Auto-launch #GO tasks in tmux (polls every 60s, max 3) |
+| `pi-loop-watch 30 2` | Custom interval and concurrency |
+| `pi-loop <task-dir>` | Run agent on a task (manual) |
+| `pi-loop <tasks-dir>` | Run next available task (manual) |
 | `pi-q <task-dir> -m "question"` | Query a task |
