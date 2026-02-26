@@ -1,82 +1,94 @@
 ---
 name: nebari-todo
-description: Manage the Nebari work todolist. Triages TODO items into tasks, tracks in-progress work, reviews completed work, archives validated tasks. Use when managing the Nebari work queue.
+description: Manage the Nebari work todolist. Triages TODO items into tasks, auto-archives completed work, tracks in-progress items. Use when managing the Nebari work queue.
 ---
 
 # Nebari Todo Manager
 
-You manage the Nebari work todolist at `/Users/maxime/dev/nebari-mvp/docs/todo/`.
+You manage the Nebari work todolist at `/Users/maxime/dev/nebari-docs/todo/`.
 
-## Files
+## Structure
 
-| File | Purpose |
+| Path | Purpose |
 |---|---|
-| `TODO.md` | Work items not yet started. Each item is an `# ` heading with a description. |
+| `TODO/` | Directory of `.md` files — one file per work item. |
+| `TODO/archive/` | Triaged TODO files are moved here after task creation. |
 | `INPROGRESS.md` | Items turned into pi-loop tasks. Each has a link to the task dir. |
-| `REVIEW.md` | Agent-completed items awaiting human validation. |
-| `ARCHIVE.md` | Human-validated items. The final state. |
-| `INSTRUCTION.md` | Reference doc explaining how this system works. |
+| `ARCHIVE.md` | Completed items. The final state. |
 
 **Task directory:** `/Users/maxime/dev/nebari-docs/tasks/`
+**Task archive:** `/Users/maxime/dev/nebari-docs/tasks/archive/`
 **Codebase:** `/Users/maxime/dev/nebari-mvp/`
+
+## TODO File Format
+
+Each file in `TODO/` is a standalone markdown file describing one work item. A file is **only ready to triage** if its content ends with `#GO` (on its own line, at the very end of the file). Files without `#GO` are still being drafted — skip them.
+
+Example `TODO/fix-sbom-pagination.md`:
+```markdown
+# Fix SBOM pagination performance
+
+The SBOM list endpoint is doing O(n²) sorting. Need materialized sort columns.
+See the keyset pagination pattern in other endpoints.
+
+#GO
+```
+
+## Completion Markers
+
+Task directories use two different markers:
+- **`DONE`** (no extension) — created by pi-loop when the agent finishes work. Means "agent says it's done."
+- **`DONE.md`** — created by the human after verifying the work. Means "human approved, ready to archive."
+
+Only `DONE.md` triggers auto-archiving.
 
 ## Workflow
 
 Run these steps in order, every time:
 
-### Step 1: Review completed work
-
-Read `REVIEW.md`. For each item, present it to the human for validation:
-
-1. **Gather context** from the task directory:
-   - Read `pr.md` for the PR link
-   - Read `DONE` file for completion summary
-   - Read `progress.md` for what was done
-   - Skim the PR diff if available: `gh pr diff <number>` (keep it brief — highlight key changes)
-
-2. **Present to human:**
-   ```
-   🔍 Review: "<item title>"
-      PR: <url>
-      Summary: <one-line from DONE/progress.md>
-      Key changes: <brief list of what changed>
-
-      [a]pprove → ARCHIVE    [r]eject → back to INPROGRESS    [s]kip
-   ```
-
-3. **Handle response:**
-   - **Approve** → Move item from `REVIEW.md` to `ARCHIVE.md` with the date and summary.
-   - **Reject** → Ask human for rejection reason. Then:
-     - Move item back to `INPROGRESS.md`
-     - Write the rejection reason to `GUIDE.md` in the task directory
-     - Remove the `DONE` file from the task directory (so pi-loop can re-run it)
-     - Report: "Sent back with feedback. Run `pi-loop <task-dir>` to address."
-   - **Skip** → Leave in REVIEW.md, move on.
-
-### Step 2: Check In-Progress → Review
+### Step 1: Auto-archive completed tasks
 
 Read `INPROGRESS.md`. For each item, check its task directory:
 
-- If task dir has a `DONE` file → **move item to REVIEW.md**. Keep the task dir link. Add: `Completed: <date>` and a one-line summary from the `DONE` file or `progress.md`. Also check for `pr.md` in the task dir — if it exists, read the PR number/URL and add `PR: <url>` to the REVIEW entry.
-- If task dir has an `EXIT` file → **report to human**: "⏸️ [item name] is stuck: [reason from EXIT]". Leave in INPROGRESS.
+- If task dir has a **`DONE.md`** file → **auto-archive**:
+  1. Gather context: read `DONE` file for agent summary, `pr.md` for PR link, `progress.md` for details.
+  2. Move the item from `INPROGRESS.md` to `ARCHIVE.md` with:
+     ```markdown
+     # <Item Title>
+     Archived: <YYYY-MM-DD>
+     PR: <url if pr.md exists>
+     Summary: <one-line from DONE/progress.md>
+     Task: `<original-task-dir-path>`
+     ```
+  3. Move the task directory to the archive:
+     ```bash
+     mkdir -p /Users/maxime/dev/nebari-docs/tasks/archive
+     mv /Users/maxime/dev/nebari-docs/tasks/<task-dir-name> /Users/maxime/dev/nebari-docs/tasks/archive/
+     ```
+  4. Report: `✅ Archived: "<item title>"`
+
+- If task dir has `DONE` but **no `DONE.md`** → agent finished, awaiting human verification. Report: `👀 Done (awaiting verification): "<item title>"`. Leave in INPROGRESS.
+- If task dir has an `EXIT` file → report: `⏸️ "<item name>" is stuck: <reason from EXIT>`. Leave in INPROGRESS.
 - If task dir has a `LOCK` file → it's running. Leave in INPROGRESS.
-- Otherwise → it's queued but not started. Leave in INPROGRESS.
+- Otherwise → queued but not started. Leave in INPROGRESS.
 
-### Step 3: Triage TODO → In-Progress
+### Step 2: Triage TODO → In-Progress
 
-Read `TODO.md`. For each item (top to bottom, priority order):
+List files in `TODO/` (not `TODO/archive/`). For each `.md` file:
 
-1. **Read the item carefully.** Is it clear enough to create a task?
+1. **Check for `#GO` marker.** Read the file and check if the content ends with `#GO` (possibly followed by a trailing newline). If not → skip, it's still being drafted.
+
+2. **Read the item carefully.** Is it clear enough to create a task?
    - **If unclear** → use `draft_questions` to ask the human for more details. **Never assume.** Stop processing further items until you get answers.
-   - **If clear** → proceed to step 2.
+   - **If clear** → proceed.
 
-2. **Research the codebase.** Before creating the task, explore `/Users/maxime/dev/nebari-mvp/` to understand:
+3. **Research the codebase.** Before creating the task, explore `/Users/maxime/dev/nebari-mvp/` to understand:
    - Which files/modules are involved
    - Existing patterns and approaches
    - Dependencies and potential impacts
    - This context goes into the task's instruction.md
 
-3. **Create the task** using the scribe pattern:
+4. **Create the task** using the scribe pattern:
    ```bash
    TIMESTAMP=$(date +%Y%m%d-%H%M%S)
    mkdir -p /Users/maxime/dev/nebari-docs/tasks/${TIMESTAMP}-<short-description>
@@ -102,49 +114,42 @@ Read `TODO.md`. For each item (top to bottom, priority order):
    <Constraints, hints from research>
    ```
 
-4. **Move the item** from `TODO.md` to `INPROGRESS.md`. The entry in INPROGRESS must include:
+5. **Move the TODO file** to `TODO/archive/`:
+   ```bash
+   mv TODO/<filename>.md TODO/archive/<filename>.md
+   ```
+
+6. **Add an entry to `INPROGRESS.md`:**
    ```markdown
    # <Item Title>
    Task: `/Users/maxime/dev/nebari-docs/tasks/<task-dir-name>`
    <original description, can be trimmed>
    ```
 
-5. **Process ONE item at a time.** After creating a task and moving it to INPROGRESS, report what you did and ask: "Continue with the next item, or stop here?"
+7. **Process ONE item at a time.** After creating a task and moving it, report what you did and ask: "Continue with the next item, or stop here?"
 
-### Step 4: Report
+### Step 3: Report
 
 After processing, print a summary:
 
 ```
 📋 Nebari Todo Status
 ─────────────────────
-Review:        <N items awaiting validation>
-Archived:      <N items archived this run>
-In Progress:   <N items> (<M running, K queued, J stuck>)
-TODO:          <N items remaining>
+TODO:          <N ready, M drafting>
+In Progress:   <N items> (<M running, K queued, J done-awaiting-verification, L stuck>)
+Archive:       <N items>
 
 Changes this run:
   ✅ → ARCHIVE: <item name>
-  🔍 → REVIEW: <item name>
-  ↩️  → REJECTED: <item name> (reason)
   🆕 → INPROGRESS: <item name> → <task-dir>
   ❓ → Need clarification: <item name>
 ```
-
-## Approve/Reject Mode
-
-When invoked with `--approve "<item>"` or `--reject "<item>"`:
-
-- **Approve:** Find the item in `REVIEW.md` by title (partial match OK). Move to `ARCHIVE.md` with date and summary. Skip all other steps.
-- **Reject:** Find the item in `REVIEW.md` by title. Ask for rejection reason (provided via `--reason` or ask interactively). Move back to `INPROGRESS.md`, write `GUIDE.md` in task dir, remove `DONE` file. Skip all other steps.
-
-If the item isn't found in `REVIEW.md`, say so and list what's there.
 
 ## Rules
 
 - **Never assume** what a TODO item means. If the description is vague, ask.
 - **Always research the codebase** before creating a task. The instruction.md should have real file paths and context.
 - **One item at a time** for triage. Let the human decide priority.
-- **Don't modify tasks** that are in progress — only move them to review when DONE.
-- **Preserve order** in TODO.md — items at the top are higher priority.
-- **Review items need human approval.** Never auto-archive.
+- **Don't modify tasks** that are in progress — only archive them when `DONE.md` exists.
+- **Only triage files with `#GO`** — files without it are still being drafted, leave them alone.
+- **Auto-archive is automatic** — no human interaction needed. If `DONE.md` exists, archive it.
