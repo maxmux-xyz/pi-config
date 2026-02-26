@@ -126,7 +126,7 @@ List files in `TODO/` (not `TODO/archive/`). For each `.md` file:
    <original description, can be trimmed>
    ```
 
-7. **Process ONE item at a time.** After creating a task and moving it, report what you did and ask: "Continue with the next item, or stop here?"
+7. **One at a time (interactive mode).** After creating a task and moving it, report what you did and ask: "Continue with the next item, or stop here?" **In BATCH MODE**, skip this — process all ready items without stopping.
 
 ### Step 3: Report
 
@@ -149,7 +149,7 @@ Changes this run:
 
 - **Never assume** what a TODO item means. If the description is vague, ask.
 - **Always research the codebase** before creating a task. The instruction.md should have real file paths and context.
-- **One item at a time** for triage. Let the human decide priority.
+- **One item at a time** for triage (interactive mode). In **BATCH MODE**, process all items without asking.
 - **Don't modify tasks** that are in progress — only archive them when `DONE.md` exists.
 - **Only triage files with `#GO`** — files without it are still being drafted, leave them alone.
 - **Auto-archive is automatic** — no human interaction needed. If `DONE.md` exists, archive it.
