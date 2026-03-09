@@ -177,17 +177,6 @@ Follow the pattern used in /api/reports (see server/routes/reports.py:45).
 
 ---
 
-## Integration with Other Skills
-
-RPI is a **meta-skill** that wraps other skills:
-
-- After **Research**: Use `/document` to capture complex findings
-- During **Plan**: Reference patterns found for `/task-planner` style plans
-- During **Implement**: Use `/backend-lint-fixer` or `/frontend-lint-fixer` after coding
-- After **Implement**: Use `/code-committer` to commit with a clear message
-
----
-
 ## Remember
 
 > "AI amplifies both thinking and lack of thinking."

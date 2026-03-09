@@ -97,6 +97,8 @@ List files in `TODO/` (not `TODO/archive/`). For each `.md` file:
    ```markdown
    # <Task Title>
 
+   Original todo draft: `/Users/maxime/dev/nebari-docs/todo/TODO/archive/<filename>.md`
+
    ## Goal
    <What needs to be done>
 

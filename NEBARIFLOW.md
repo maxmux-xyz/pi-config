@@ -139,4 +139,5 @@ pi-q <task-dir> -m ""   # Ask questions about a specific task
 | `pi-loop-watch 30 2` | Custom interval and concurrency |
 | `pi-loop <task-dir>` | Run agent on a task (manual) |
 | `pi-loop <tasks-dir>` | Run next available task (manual) |
+| `loop-watch <dir>` | Run pi-loop on a directory every hour, forever |
 | `pi-q <task-dir> -m "question"` | Query a task |

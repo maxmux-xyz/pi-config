@@ -11,6 +11,10 @@ You are running in `pi-loop` — an iterative system with fresh context each run
 
 **Each iteration does exactly ONE phase of work, then exits via `loop_next` or `loop_done`.**
 
+## Critical Rule: Token Budget
+
+**Every LLM turn includes a `[tokens | ...]` line showing cumulative session usage.** Watch the `total:` field. When you approach **100k tokens**, wrap up immediately — save progress to `progress.md` and call `loop_next`. Don't start new chunks of work past 80k. The loop restarts you with fresh context, so there's zero cost to exiting early. Running past 100k degrades output quality and wastes money.
+
 You MUST NOT combine phases. After writing `research.md` → stop. After writing `plan.md` → stop. After one implementation chunk → stop. The loop harness will restart you with fresh context for the next phase.
 
 ### Two workflows
@@ -46,7 +50,11 @@ Always start by reading these files from the task directory:
 
 1. `instruction.md` — The task (always exists)
 2. `progress.md` — What's been done (if exists)
-3. `GUIDE.md` — Human guidance (if exists). **High priority** — follow it, then delete the file.
+3. `GUIDE.md` — Human guidance (if exists). **High priority.** When present:
+   - Read it carefully
+   - Append to `instruction.md` with a section like: `## Human Guidance (<YYYY-MM-DD>)\n<contents of GUIDE.md>`
+   - Follow the guidance in your current iteration
+   - Archive `GUIDE.md` only when the task is fully done (`loop_done`): create a `human/` directory in the task dir (if it doesn't exist) and move the file there as `GUIDE-<YYYYMMDD-HHMMSS>.md` (using the current timestamp)
 4. **Any other `.md` files** — The task directory may contain additional context files (e.g., `RISK.md`, `NOTE.md`, `CONTEXT.md`). **Be curious** — list the task directory and read any `.md` files you don't recognize. They were placed there for a reason.
 
 ## 2. Determine Phase and Execute It
@@ -57,11 +65,21 @@ Check which files exist to decide your ONE phase for this iteration:
 Investigate the problem space. Read files, run commands, gather facts. **Make no code changes.** Write `research.md` with findings. Then update `progress.md` and call **`loop_next`**.
 
 ### Plan (`research.md` exists, no `plan.md`)
-Read research + instruction. Follow the plan skill (`/Users/maxime/dev/nebari-mvp/agents/skills/task-planner/SKILL.md`) to write `plan.md`. Then update `progress.md` and call **`loop_next`**.
+Read research + instruction. Follow the [RPI skill's](/Users/maxime/.pi/agent/skills/rpi/SKILL.md) Plan phase approach. Write `plan.md` with:
+
+1. **Summary**: One sentence describing what you're implementing
+2. **Approach**: How you'll solve it (referencing patterns found in Research)
+3. **Files to modify**: List each file with a brief description of changes
+4. **Files to create**: Any new files needed
+5. **Dependencies**: Other systems affected, tests to update
+6. **Edge cases**: Explicitly call out how you'll handle them
+7. **Open questions**: Anything you're uncertain about
+
+Then update `progress.md` and call **`loop_next`**.
 
 ### Implement / Execute (`research.md` and `plan.md` both exist, work remains)
 
-**Code workflow →** Follow the implement skill (`/Users/maxime/dev/nebari-mvp/agents/skills/implement-plan/SKILL.md`). Do **ONE chunk** of work — a single logical step from the plan. Update `plan.md` if needed (note what changed and why). Then update `progress.md` and call **`loop_next`**. When all implementation chunks are done and verified (tests pass, lint passes), the **next iteration** is the Git/PR phase.
+**Code workflow →** Follow the [RPI skill's](/Users/maxime/.pi/agent/skills/rpi/SKILL.md) Implement phase discipline: follow the plan exactly, match existing patterns from Research, no scope creep. If you discover the plan is wrong, STOP and update the plan rather than improvising. Do **ONE chunk** of work — a single logical step from the plan. Update `plan.md` if needed (note what changed and why). Then update `progress.md` and call **`loop_next`**. When all implementation chunks are done and verified (tests pass, lint passes), the **next iteration** is the Git/PR phase.
 
 **Ops workflow →** Execute the next step from the plan: trigger jobs, run commands, call APIs, poll for completion, verify results. Do **ONE logical step** per iteration. If something is long-running, wait inline — don't exit just to poll. Don't hesitate to sleep long (`bash("sleep 300")`, `bash("sleep 600")`) — some jobs take a while and that's fine. Update `progress.md` with commands run, outputs, and status. Call **`loop_next`**. When all steps are done and verified, call **`loop_done`** directly — no Git/PR or Review phases.
 
@@ -173,5 +191,5 @@ Do NOT wait for CI here — the review phase will catch issues. If CI fails, you
 Every iteration MUST end with exactly one of these calls:
 
 - **`loop_next`** — This phase is done but the task isn't finished. **This is the most common ending.** Use it after Research, Plan, each Implement chunk, Git/PR, Review (with findings), and Address Review.
-- **`loop_done`** — Task fully complete. **Code workflow:** PR is up and review is clean. **Ops workflow:** all steps executed and verified.
+- **`loop_done`** — Task fully complete. **Code workflow:** PR is up and review is clean. **Ops workflow:** all steps executed and verified. **Before calling `loop_done`**, clean up: `git checkout stg && gt sync` to free the repo, and delete the `.repo` file in the task directory (`rm <task-dir>/.repo`) to release the pin.
 - **`loop_terminate`** — Blocked, need human help. Stops the loop.

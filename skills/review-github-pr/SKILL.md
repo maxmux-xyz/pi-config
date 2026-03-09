@@ -35,6 +35,72 @@ Use `git diff origin/<base_branch>...HEAD -- <path>` to drill into specific file
 
 Read the PR title, description, and linked issues. Summarize in one sentence what this PR is trying to do before reading any code.
 
+## Step 2b: Save initial notes
+
+Immediately after understanding the PR goal and doing a first scan of the diff, write notes to `/Users/maxime/dev/nebari-docs/prs/PR-<NUMBER>-notes.md`. Do this **before** loading standards or doing deep analysis — capture your raw first impressions while they're fresh.
+
+```markdown
+# PR #<NUMBER>: <title>
+
+## Intent
+<Why is this engineer making this change? What problem are they solving? What's the motivation?>
+
+## First Impressions
+<What jumps out on first read? Anything surprising, confusing, or notably clean?>
+
+## Initial Comments
+<Early concerns or suggestions — rough is fine, these get refined later>
+- <file>:<area> — <concern>
+- ...
+```
+
+This file persists even if the review session is interrupted. It also gives the human a quick "what did the agent think on first look" artifact separate from the polished review.
+
+## Step 2c: Research the surrounding codebase
+
+**DO NOT skip this step. DO NOT jump straight to reviewing the diff for bugs.**
+
+The diff alone is not enough to review a PR. You need to understand the system the PR is changing. This is a dedicated research phase — read code, gather facts, build understanding. Make no judgments yet.
+
+**What to research:**
+
+1. **Data models** — Read the DB schema/types for every table or model the PR touches. Understand columns, relationships, constraints, indexes. Check the ORM schema file, not just the PR's usage.
+2. **Existing patterns** — How do similar routers/endpoints/functions in the codebase work? Read 2-3 neighboring files that solve the same class of problem. Note the patterns: how do they handle auth, pagination, tenant scoping, error handling, etc.
+3. **Callers and consumers** — Who calls the code being changed? What depends on it? Grep for imports and usages.
+4. **Related middleware/utilities** — If the PR uses middleware (auth, audit logging, etc.), read the middleware source. Understand what it provides to context.
+5. **Test patterns** — How are similar features tested in the codebase? What test utilities exist?
+
+**How to research:**
+- Read the actual files on disk (the PR branch is checked out locally)
+- `grep`/`rg` for function names, table names, type names across the codebase
+- Read schema files, migration files, model definitions
+- Read 2-3 sibling routers/queries/tests for pattern comparison
+- Check AGENTS.md, CODESTYLE.md, and howto docs for the affected modules
+
+**Rules:**
+- DO NOT start looking for bugs yet — you're gathering context
+- DO NOT make assumptions — find the actual code
+- DO search broadly — you don't know what you don't know
+- DO note specific file paths so you can reference them later
+
+This research directly feeds the next step (Business Context) and makes the technical review accurate. Without it, you'll flag false positives (like "missing tenant scoping" when the deployment is single-tenant) or miss real issues hidden in the interaction between the PR and existing code.
+
+## Step 2d: Business Context Walkthrough
+
+Before any technical review, present a plain-language business context summary to the user. This is the first thing the user sees — it grounds the review in "what does this PR actually do" before getting into code quality.
+
+Using what you learned in the Research step, explain:
+
+- **What data is being loaded / transformed?** Which tables, models, or external sources are involved? What shape does the data have? What are the key fields?
+- **What are the relevant data models?** Walk through the schema/types that this PR reads from, writes to, or introduces. Explain relationships between them.
+- **What does the code do with the data?** Describe the flow: input → processing → output. What queries run? What transformations happen? What gets returned to the caller?
+- **What feature does this deliver?** What will the end user be able to do that they couldn't before? What page/flow/workflow does this power?
+- **Why does this matter?** One sentence on the business value (compliance, performance, UX, etc.)
+
+Write this in plain language — like explaining it to a teammate who hasn't seen the code. No jargon, no implementation details. The goal is: after reading this section, the user understands the PR without reading any code.
+
+**Present this to the user first, before the technical review.** Then proceed to analysis and comments.
+
 ## Step 3: Load project standards
 
 Read the relevant guidelines for the files changed:
@@ -113,8 +179,20 @@ Look for:
 Format your review as:
 
 ```
-## PR Summary
-<one paragraph on what this PR does>
+## Business Context
+
+### The Data
+<What tables/models are involved? What's in them? What are the key fields and relationships? Plain language.>
+
+### What This PR Does
+<Walk through the data flow: what gets loaded, how it's transformed, what gets returned. Describe the endpoints/functions and what they do. No code — just the logic.>
+
+### What Feature This Delivers
+<What can the user do now that they couldn't before? What page/flow does this power? Why does it matter?>
+
+## Files Changed
+- `path/to/file.py` — <what changed, one line>
+- `path/to/other.py` — <what changed, one line>
 
 ## Assessment
 <what you think — is it solid? lean? overengineered? risky?>
@@ -138,7 +216,7 @@ Prefix each comment with:
 
 ## Step 6: Save review summary
 
-Write a concise review file to `/Users/maxime/dev/nebari-mvp/docs/prs/PR-<NUMBER>.md` so the human can quickly scan it and decide what to do.
+Write a concise review file to `/Users/maxime/dev/nebari-docs/prs/PR-<NUMBER>.md` so the human can quickly scan it and decide what to do.
 
 Format:
 
@@ -149,14 +227,23 @@ Format:
 **Author:** <author>
 **Date reviewed:** <YYYY-MM-DD>
 
-## Intent
-<2-3 sentences max. What does this PR do and why.>
+## Business Context
+
+### The Data
+<What tables/models are involved? What's in them? What are the key fields and relationships? Plain language.>
+
+### What This PR Does
+<Walk through the data flow: what gets loaded, how it's transformed, what gets returned. Describe the endpoints/functions and what they do. No code — just the logic.>
+
+### What Feature This Delivers
+<What can the user do now that they couldn't before? What page/flow does this power? Why does it matter?>
+
+## Files Changed
+- `path/to/file.py` — <what changed, one line>
+- `path/to/other.py` — <what changed, one line>
 
 ## Risk Assessment
 <High/Medium/Low> — <one sentence why. e.g. "touches auth middleware used by every endpoint">
-
-## Key Changes
-- <file or area>: <what changed, one line each>
 
 ## Comments
 

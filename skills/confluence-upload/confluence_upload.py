@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """
-Upload a local directory of markdown files to Confluence as a nested page tree.
+Upload markdown to Confluence — a single file or a directory tree.
 
 Requires env vars:
   CONFLUENCE_EMAIL       - Atlassian account email
   CONFLUENCE_API_TOKEN   - API token from https://id.atlassian.com/manage-profile/security/api-tokens
 
 Usage:
+  # Single file → one page
+  python3 confluence_upload.py --instance nebari-ai.atlassian.net --space Eng --parent-id 98762754 --file doc.md --title "My Page"
+
+  # Directory → nested page tree
   python3 confluence_upload.py --instance nebari-ai.atlassian.net --space PM --parent-id 71499794 --dir ./artefacts
+
+  # Delete a page tree
   python3 confluence_upload.py --instance nebari-ai.atlassian.net --space PM --parent-id 71499794 --delete "Artefacts"
 """
 
@@ -217,6 +223,8 @@ def main():
     parser.add_argument("--space", required=True, help="Confluence space key (e.g. PM)")
     parser.add_argument("--parent-id", required=True, help="Parent page/folder ID")
     parser.add_argument("--dir", help="Local directory to upload")
+    parser.add_argument("--file", help="Single markdown file to upload as one page")
+    parser.add_argument("--title", help="Page title (for --file mode; default: filename stem)")
     parser.add_argument("--root-title", help="Title for the root page (default: directory name)")
     parser.add_argument("--delete", metavar="TITLE", help="Delete a page tree by title instead of uploading")
     parser.add_argument("--dry-run", action="store_true", help="Preview without making changes")
@@ -237,9 +245,34 @@ def main():
         client.print_stats()
         return
 
-    # --- Upload mode ---
+    # --- Single file mode ---
+    if args.file:
+        filepath = os.path.abspath(args.file)
+        if not os.path.isfile(filepath):
+            print(f"ERROR: Not a file: {filepath}")
+            sys.exit(1)
+
+        title = args.title or pretty_title(Path(filepath).stem)
+
+        print(f"Uploading: {filepath}")
+        print(f"Target:    {args.instance} → space={args.space} → parent={args.parent_id}")
+        print(f"Title:     {title}")
+        print("=" * 60)
+
+        with open(filepath, "r", encoding="utf-8") as fh:
+            body = md_to_storage(fh.read())
+
+        page_id = client.create_page(title, body, args.parent_id)
+        if page_id and not args.dry_run and page_id != "dry-run-id":
+            url = f"https://{args.instance}/wiki/spaces/{args.space}/pages/{page_id}"
+            print(f"\n  🔗 {url}")
+
+        client.print_stats()
+        return
+
+    # --- Upload directory mode ---
     if not args.dir:
-        parser.error("--dir is required for upload mode")
+        parser.error("--dir or --file is required for upload mode")
 
     dir_path = os.path.abspath(args.dir)
     if not os.path.isdir(dir_path):
