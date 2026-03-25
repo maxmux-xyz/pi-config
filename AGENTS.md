@@ -2,10 +2,11 @@
 
 ## Working Directory - ALWAYS USE `pwd`
 
-- **NEVER** make changes in directories outside the current working directory (`pwd`)
+- Default rule: **NEVER** make changes in directories outside the current working directory (`pwd`)
 - If the user launched the session in `/Users/maxime/dev/nebari-mvp-1`, ALL file edits, git operations, and commands must happen there
 - Do NOT `cd` into sibling repos or other checkouts of the same repo (e.g., `/Users/maxime/dev/nebari-mvp` vs `/Users/maxime/dev/nebari-mvp-1`)
 - If a PR URL references a different repo/org, still make changes in `pwd` — that's where the user's working branch is
+- Exception: agents may also write files anywhere under `/Users/maxime/dev/nebari-docs/` because it serves as the shared team brain for important information of any type
 
 ## Parallel Tasks - VERIFY FIRST
 

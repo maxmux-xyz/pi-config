@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Jira Cloud API helper — read-only, thin curl wrapper
+# Jira Cloud API helper — thin curl wrapper
 # Reuses Confluence credentials (same Atlassian API token)
 # Requires: CONFLUENCE_EMAIL and CONFLUENCE_API_TOKEN env vars
 
@@ -180,10 +180,161 @@ case "$cmd" in
     curl -sS $auth "$url"
     ;;
 
+  # ── Write: Create Issue ──────────────────────────────────────────────
+  create-issue)
+    # Usage: jira.sh create-issue <project> <issuetype> <summary> [description]
+    # issuetype: Bug | Task | Story | Infra | Epic
+    # Returns JSON with key, id, self
+    project="${1:?project key required (e.g. EN)}"
+    issuetype="${2:?issue type required (Bug|Task|Story|Infra|Epic)}"
+    summary="${3:?summary required}"
+    description="${4:-}"
+
+    payload=$(jq -n \
+      --arg proj "$project" \
+      --arg type "$issuetype" \
+      --arg sum "$summary" \
+      --arg desc "$description" \
+      '{
+        fields: {
+          project: { key: $proj },
+          issuetype: { name: $type },
+          summary: $sum,
+          description: (if $desc != "" then {
+            type: "doc",
+            version: 1,
+            content: [{ type: "paragraph", content: [{ type: "text", text: $desc }] }]
+          } else null end)
+        }
+      }')
+
+    curl -sS $auth -X POST "https://${API}/issue" \
+      -H "Content-Type: application/json" \
+      -d "$payload"
+    ;;
+
+  # ── Write: Update Issue Fields ─────────────────────────────────────
+  update-issue)
+    # Usage: jira.sh update-issue <issue-key> <json-payload>
+    # json-payload is a JSON object with fields to update
+    # Example: jira.sh update-issue EN-100 '{"fields":{"labels":["auto-created"]}}'
+    key="${1:?issue key required}"
+    payload="${2:?JSON payload required}"
+
+    curl -sS $auth -X PUT "https://${API}/issue/${key}" \
+      -H "Content-Type: application/json" \
+      -d "$payload" \
+      -w "\n{\"status\": %{http_code}}"
+    ;;
+
+  # ── Write: Transition Issue ────────────────────────────────────────
+  transition)
+    # Usage: jira.sh transition <issue-key> <transition-id>
+    # Transition IDs (get from 'transitions' command):
+    #   11 = To Do, 21 = In Progress, 31 = Done
+    #   2 = BLOCKED, 3 = ON-HOLD, 5 = NOT RELEVANT, 6 = WAITING-PR-REVIEW
+    key="${1:?issue key required}"
+    tid="${2:?transition id required}"
+
+    curl -sS $auth -X POST "https://${API}/issue/${key}/transitions" \
+      -H "Content-Type: application/json" \
+      -d "{\"transition\":{\"id\":\"${tid}\"}}" \
+      -w "\n{\"status\": %{http_code}}"
+    ;;
+
+  # ── Write: Assign Issue ────────────────────────────────────────────
+  assign)
+    # Usage: jira.sh assign <issue-key> <account-id>
+    # Use 'myself' command to get your account ID
+    # Use '-1' or 'unassigned' to unassign
+    key="${1:?issue key required}"
+    account="${2:?account-id required}"
+
+    if [[ "$account" == "-1" ]] || [[ "$account" == "unassigned" ]]; then
+      account="null"
+      curl -sS $auth -X PUT "https://${API}/issue/${key}/assignee" \
+        -H "Content-Type: application/json" \
+        -d "{\"accountId\": null}" \
+        -w "\n{\"status\": %{http_code}}"
+    else
+      curl -sS $auth -X PUT "https://${API}/issue/${key}/assignee" \
+        -H "Content-Type: application/json" \
+        -d "{\"accountId\": \"${account}\"}" \
+        -w "\n{\"status\": %{http_code}}"
+    fi
+    ;;
+
+  # ── Write: Add Remote Link (PR URL) ───────────────────────────────
+  add-remote-link)
+    # Usage: jira.sh add-remote-link <issue-key> <url> <title>
+    # Adds a clickable link to the issue (e.g., GitHub PR)
+    key="${1:?issue key required}"
+    url="${2:?URL required}"
+    title="${3:?title required}"
+
+    payload=$(jq -n \
+      --arg url "$url" \
+      --arg title "$title" \
+      '{
+        object: {
+          url: $url,
+          title: $title,
+          icon: {
+            url16x16: "https://github.com/favicon.ico",
+            title: "GitHub"
+          }
+        }
+      }')
+
+    curl -sS $auth -X POST "https://${API}/issue/${key}/remotelink" \
+      -H "Content-Type: application/json" \
+      -d "$payload"
+    ;;
+
+  # ── Write: Link Two Issues ────────────────────────────────────────
+  link-issues)
+    # Usage: jira.sh link-issues <inward-key> <outward-key> [link-type]
+    # link-type: Relates (default), Blocks, Duplicate
+    # Example: jira.sh link-issues EN-100 EN-101 Relates
+    inward="${1:?inward issue key required}"
+    outward="${2:?outward issue key required}"
+    linktype="${3:-Relates}"
+
+    payload=$(jq -n \
+      --arg type "$linktype" \
+      --arg inkey "$inward" \
+      --arg outkey "$outward" \
+      '{
+        type: { name: $type },
+        inwardIssue: { key: $inkey },
+        outwardIssue: { key: $outkey }
+      }')
+
+    curl -sS $auth -X POST "https://${API}/issueLink" \
+      -H "Content-Type: application/json" \
+      -d "$payload" \
+      -w "\n{\"status\": %{http_code}}"
+    ;;
+
+  # ── Write: Add Label ──────────────────────────────────────────────
+  add-label)
+    # Usage: jira.sh add-label <issue-key> <label>
+    key="${1:?issue key required}"
+    label="${2:?label required}"
+
+    payload=$(jq -n --arg lbl "$label" \
+      '{ update: { labels: [{ add: $lbl }] } }')
+
+    curl -sS $auth -X PUT "https://${API}/issue/${key}" \
+      -H "Content-Type: application/json" \
+      -d "$payload" \
+      -w "\n{\"status\": %{http_code}}"
+    ;;
+
   # ── Help ────────────────────────────────────────────────────────────
   help|*)
     cat <<'EOF'
-Jira Read-Only CLI — Commands:
+Jira CLI — Commands:
 
   Identity:
     myself                                          Your account info
@@ -195,11 +346,20 @@ Jira Read-Only CLI — Commands:
   Search:
     search "JQL" [max] [fields]                     Search issues with JQL
 
-  Issues:
+  Issues (read):
     issue <key> [fields]                            Full issue details
     comments <key> [max]                            Issue comments
     transitions <key>                               Available transitions
     changelog <key> [max]                           Issue change history
+
+  Issues (write):
+    create-issue <project> <type> <summary> [desc]  Create issue (Bug|Task|Story|Infra|Epic)
+    update-issue <key> <json-payload>               Update issue fields
+    transition <key> <transition-id>                Change issue status
+    assign <key> <account-id>                       Assign issue (or 'unassigned')
+    add-label <key> <label>                         Add label to issue
+    add-remote-link <key> <url> <title>             Add external link (e.g. GitHub PR)
+    link-issues <inward> <outward> [type]           Link two issues (Relates|Blocks|Duplicate)
 
   Boards:
     boards [project-key]                            List boards
@@ -222,6 +382,10 @@ Jira Read-Only CLI — Commands:
     issue-types <project-key>                       Issue types
     priorities                                      Priority levels
     labels [prefix]                                 All labels
+
+  Transition IDs:
+    11 = To Do, 21 = In Progress, 31 = Done
+    2 = BLOCKED, 3 = ON-HOLD, 5 = NOT RELEVANT, 6 = WAITING-PR-REVIEW
 
   All output is JSON. Pipe through jq for readability.
   JQL reference: https://support.atlassian.com/jira-service-management-cloud/docs/use-advanced-search-with-jql/

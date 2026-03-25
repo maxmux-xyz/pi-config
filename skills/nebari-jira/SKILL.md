@@ -1,11 +1,11 @@
 ---
 name: nebari-jira
-description: Read-only access to Jira issues, sprints, boards, and users for the Nebari Engineering project. Use when the user asks to check Jira, look at tickets, see sprint status, find someone's issues, or anything involving Jira content.
+description: Read and write access to Jira issues, sprints, boards, and users for the Nebari Engineering project. Use when the user asks to check Jira, look at tickets, see sprint status, find someone's issues, create/update tickets, or anything involving Jira content.
 ---
 
 # Nebari Jira
 
-Read-only Jira access via the REST API. Uses the same Atlassian credentials as Confluence.
+Jira read/write access via the REST API. Uses the same Atlassian credentials as Confluence.
 
 ## Prerequisites
 
@@ -70,6 +70,47 @@ bash <skill_dir>/scripts/jira.sh changelog EN-84
 
 # Available transitions
 bash <skill_dir>/scripts/jira.sh transitions EN-84
+```
+
+### Create Issues
+
+```bash
+# Create a task
+bash <skill_dir>/scripts/jira.sh create-issue EN Task "Fix login timeout" "Users see timeout after 30s"
+
+# Create a bug
+bash <skill_dir>/scripts/jira.sh create-issue EN Bug "Login fails on Safari" "Steps to reproduce..."
+
+# Create a story
+bash <skill_dir>/scripts/jira.sh create-issue EN Story "Add SSO support" "As a user I want to log in with SSO"
+
+# Create an infra task
+bash <skill_dir>/scripts/jira.sh create-issue EN Infra "Migrate to CloudNativePG" "Replace current postgres setup"
+```
+
+### Update Issues
+
+```bash
+# Transition issue status
+# IDs: 11=To Do, 21=In Progress, 31=Done, 2=BLOCKED, 3=ON-HOLD, 5=NOT RELEVANT, 6=WAITING-PR-REVIEW
+bash <skill_dir>/scripts/jira.sh transition ENG-100 21  # → In Progress
+bash <skill_dir>/scripts/jira.sh transition ENG-100 31  # → Done
+
+# Assign issue
+bash <skill_dir>/scripts/jira.sh assign ENG-100 "712020:ecbdeb6b-abe2-4be5-982e-15f9768a3729"  # maxime
+bash <skill_dir>/scripts/jira.sh assign ENG-100 unassigned  # unassign
+
+# Add label
+bash <skill_dir>/scripts/jira.sh add-label ENG-100 "auto-created"
+
+# Add remote link (e.g., GitHub PR)
+bash <skill_dir>/scripts/jira.sh add-remote-link ENG-100 "https://github.com/nebariai/nebari-mvp/pull/4676" "PR #4676 — refactor: replace S3 reads with EFS"
+
+# Link two issues
+bash <skill_dir>/scripts/jira.sh link-issues ENG-100 ENG-101 Relates  # link types: Relates, Blocks, Duplicate
+
+# Update arbitrary fields
+bash <skill_dir>/scripts/jira.sh update-issue ENG-100 '{"fields":{"summary":"New title"}}'
 ```
 
 ### Sprints

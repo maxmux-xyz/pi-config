@@ -42,6 +42,16 @@ Task directories use two different markers:
 
 Only `DONE.md` triggers auto-archiving.
 
+## Manual Task Directories
+
+Sometimes tasks are created directly under `/Users/maxime/dev/nebari-docs/tasks/` without going through `TODO/` or `INPROGRESS.md`.
+
+Treat these as **orphan tasks**. Keep the handling intentionally simple:
+- Do the normal `INPROGRESS.md` scan first.
+- Then scan `/Users/maxime/dev/nebari-docs/tasks/` for task directories that are **not** referenced in `INPROGRESS.md` or `ARCHIVE.md`.
+- If an orphan task has **`DONE.md`** → archive it.
+- Otherwise leave it alone. Do **not** auto-add orphan tasks to `INPROGRESS.md`.
+
 ## Workflow
 
 Run these steps in order, every time:
@@ -71,6 +81,11 @@ Read `INPROGRESS.md`. For each item, check its task directory:
 - If task dir has an `EXIT` file → report: `⏸️ "<item name>" is stuck: <reason from EXIT>`. Leave in INPROGRESS.
 - If task dir has a `LOCK` file → it's running. Leave in INPROGRESS.
 - Otherwise → queued but not started. Leave in INPROGRESS.
+
+Then do a second, simple orphan scan:
+- Scan `/Users/maxime/dev/nebari-docs/tasks/` (excluding `tasks/archive/`) for task dirs with `instruction.md` that are **not** referenced in `INPROGRESS.md` or `ARCHIVE.md`.
+- If an orphan task has **`DONE.md`** → archive it using the same archive format and move it to `tasks/archive/`.
+- Otherwise ignore it.
 
 ### Step 2: Triage TODO → In-Progress
 
