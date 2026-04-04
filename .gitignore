@@ -11,3 +11,6 @@ PLAN.md
 
 # Managed binaries (auto-downloaded by pi)
 bin/
+
+# Managed package clones (created by `pi install git:...`)
+git/
