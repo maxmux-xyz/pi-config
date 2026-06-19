@@ -24,6 +24,42 @@
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         },
         {
+          "id": "qwen3-coder:30b",
+          "name": "Qwen3 Coder 30B MoE (Local)",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 128000,
+          "maxTokens": 32000,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "qwen2.5-coder:32b",
+          "name": "Qwen2.5 Coder 32B Dense (Local)",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 128000,
+          "maxTokens": 32000,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "qwen3.6:35b-a3b",
+          "name": "Qwen3.6 35B MoE (Local)",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 128000,
+          "maxTokens": 32000,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "deepseek-coder-v2:16b",
+          "name": "DeepSeek Coder V2 16B (Local)",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 128000,
+          "maxTokens": 32000,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
           "id": "deepseek-r1:14b",
           "name": "DeepSeek R1 14B (Local)",
           "reasoning": true,

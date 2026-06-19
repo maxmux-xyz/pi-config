@@ -3,26 +3,30 @@ name: nebari-debug
 description: Debug data and workflow issues in remote environments. Database queries and Temporal workflow inspection. Use when user says "check the database", "query DB", "workflow failed", "workflow status", or is investigating production/staging data issues.
 allowed-tools: Bash, Read
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   category: ops
 ---
 
-## Prerequisites - Session Setup
+## Prerequisites
 
-**Before any debugging, ensure session credentials exist:**
+**Database access uses `ndb psql` directly — no setup or `ndb up` needed.**
+
+Source the repo shellrc first so `ndb` and its helpers resolve in a fresh Bash shell, then run the query:
 
 ```bash
-ls -la .claude/session 2>/dev/null || echo "NO SESSION"
+source .shellrc && ndb psql <env> --query "..."
 ```
 
-**If no session, run:**
+Without `source .shellrc`, `ndb psql` errors with `command not found: _ndb_getenv` and an empty-`NDB_DOMAIN` DNS failure.
+
+If it fails, **pause and ask the human** rather than running setup commands. Only the human's terminal can complete `ndb setup` (requires sudo).
+
+**Temporal and kubectl** use session credentials from `.claude/session/`. If missing:
 ```bash
 bash .claude/scripts/session-env-setup.sh
 ```
 
-Extracts credentials from 1Password for all environments (cached 8 hours).
-
-**NEVER use single `op read` or `op` commands to fetch individual secrets.** Always run the session setup script once — all secrets for all environments will be available in `.claude/session/.env.<environment>`. The wrapper scripts (`nenv-db`, `nenv-temporal`, etc.) read from these files automatically.
+**NEVER use single `op read` or `op` commands to fetch individual secrets.** Always run the session setup script once — all secrets for all environments will be available in `.claude/session/.env.<environment>`. The wrapper scripts (`nenv-temporal`, etc.) read from these files automatically.
 
 ## Environments - CRITICAL
 
@@ -42,29 +46,69 @@ If unspecified: ask the user, or look for clues in URLs (e.g., `nomadic-nutmeg.u
 
 ---
 
-## 1. Database Queries
+## 1. Kubernetes / kubectl Access
 
+**Switch kubectl context to an environment:**
 ```bash
-./nebari/python/scripts/nenv-db <environment> "<query>"
+aws eks update-kubeconfig --region us-east-1 --name eks-cluster --alias <environment> --profile "nebari-environment-profile--<environment>"
 ```
 
-**Examples:**
+All environments are in `us-east-1`. After switching, all `kubectl` commands target that environment's cluster.
+
+**Common kubectl commands after switching:**
 ```bash
-./nebari/python/scripts/nenv-db stumpy-tangerine "SELECT * FROM finding WHERE id = '<uuid>'"
-./nebari/python/scripts/nenv-db stumpy-tangerine "SELECT id, title, status FROM finding ORDER BY created_at DESC LIMIT 10"
-./nebari/python/scripts/nenv-db stumpy-tangerine "\\dt"  # list tables
+# List worker pods
+kubectl get pods -n temporal
+
+# Exec into RW worker to inspect FSx
+kubectl exec -n temporal deployment/temporal-workers-rw -c temporal-worker -- bash -c '<command>'
+
+# Check FSx filesystem
+kubectl exec -n temporal deployment/temporal-workers-rw -c temporal-worker -- ls /mnt/codebases/
 ```
+
+---
+
+## 2. Database Queries
+
+**Run queries directly — no `ndb up` needed.** Source `.shellrc` once per Bash invocation so the `ndb` helpers resolve:
+```bash
+source .shellrc && ndb psql <environment> --query "SELECT * FROM finding WHERE id = '<uuid>'"
+source .shellrc && ndb psql <environment> --query "SELECT id, title, status FROM finding ORDER BY created_at DESC LIMIT 10"
+source .shellrc && ndb psql <environment> --query "\dt"  # list tables
+```
+
+If a query fails (e.g., `ndb is not set up`, missing setup), **stop and ask the human to run `ndb setup` in their terminal**. Do not attempt setup yourself — it requires sudo.
 
 **Tips:**
 - **Table names have no underscores:** SQLModel maps `CodebaseAnalysis` → `codebaseanalysis`, not `codebase_analysis`. When in doubt, query `information_schema.tables` or use `\dt` to list tables.
 - **Quote reserved words:** `"user"` not `user`
 - **Read-only queries only** (SELECT) unless explicitly told otherwise
 - **Avoid dumping PII** - use LIMIT, select specific columns
-- Interactive session: `./nebari/python/scripts/nenv-db stumpy-tangerine` (no query)
 
 ---
 
-## 2. Temporal Workflows
+## 2b. Running Python Scripts Against an Env DB
+
+Use the `nenv` shell function — it execs with session-cached env vars for the target env:
+
+```bash
+ENV=<env> nenv python <path/to/script.py> [--dry-run]
+```
+
+Example:
+```bash
+ENV=curious-cedar nenv python nebari/python/scripts/backfill_finding_code_owners.py --dry-run
+```
+
+Notes:
+- DB name is usually `nebari_eval_stg` for remote environments.
+- `DATABASE_URL` contains `?iam_hostname_override=...` — the real RDS endpoint used for IAM auth signing (the old `DATABASE_IAM_HOSTNAME` env var is gone).
+- **Always prefer `--dry-run` first** for any script that writes.
+
+---
+
+## 3. Temporal Workflows
 
 ```bash
 .claude/scripts/nenv-temporal <environment> <subcommand> [args...]
@@ -138,7 +182,7 @@ grep -n "YourWorkflowName" nebari/python/worker/run_worker.py
 ## Common Patterns
 
 ### Finding not processed
-1. DB: `SELECT status, temporal_workflow_id FROM finding WHERE id = '<id>'`
+1. DB: `ndb psql <env> --query "SELECT status, temporal_workflow_id FROM finding WHERE id = '<id>'"`
 2. Temporal: `workflow describe -w <workflow-id>`
 
 ### Workflow failed

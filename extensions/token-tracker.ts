@@ -56,26 +56,6 @@ function updateStatus(ctx: ExtensionContext): void {
 	ctx.ui.setStatus("token-tracker", theme.fg(colorName, text));
 }
 
-function getContextMessage(tokens: number): string | null {
-	const level = getUsageLevel(tokens);
-
-	if (level === "critical") {
-		return `[TOKEN BUDGET: ${formatTokens(tokens)}/${formatTokens(HARD_LIMIT)} - CRITICAL]
-You are approaching the context limit. Please:
-1. Wrap up your current analysis/work
-2. Provide a clear summary of what you've found or accomplished
-3. Suggest the user run /handoff or start a fresh session for continued work
-
-Consider creating a handoff summary with key findings, file paths, and next steps.`;
-	}
-
-	if (level === "warning") {
-		return `[TOKEN BUDGET: ${formatTokens(tokens)}/${formatTokens(HARD_LIMIT)} - ${Math.round((tokens / HARD_LIMIT) * 100)}% used]
-Context usage is elevated. Consider being concise and focused. If the task is complex, you may want to suggest breaking it into smaller sessions.`;
-	}
-
-	return null;
-}
 
 export default function (pi: ExtensionAPI) {
 	// Update status on session start
@@ -88,43 +68,6 @@ export default function (pi: ExtensionAPI) {
 		updateStatus(ctx);
 	});
 
-	// Inject context message and system prompt reminder when approaching limit
-	pi.on("before_agent_start", async (event, ctx) => {
-		const usage = ctx.getContextUsage();
-		if (!usage) return;
-
-		const level = getUsageLevel(usage.tokens);
-		const message = getContextMessage(usage.tokens);
-
-		// Build result object
-		const result: {
-			message?: {
-				customType: string;
-				content: string;
-				display: boolean;
-			};
-			systemPrompt?: string;
-		} = {};
-
-		// Inject message for the LLM
-		if (message) {
-			result.message = {
-				customType: "token-tracker-context",
-				content: message,
-				display: false, // Don't show to user, just inject for LLM
-			};
-		}
-
-		// Add system prompt reminder for critical level (applies to all turns)
-		if (level === "critical") {
-			const reminder = `\n\n[TOKEN BUDGET CRITICAL: ${formatTokens(usage.tokens)}/${formatTokens(HARD_LIMIT)} tokens used. Wrap up work and suggest /handoff.]`;
-			result.systemPrompt = event.systemPrompt + reminder;
-		}
-
-		if (result.message || result.systemPrompt) {
-			return result;
-		}
-	});
 
 	// Update status at start of each turn
 	pi.on("turn_start", async (_event, ctx) => {

@@ -1,8 +1,11 @@
 {
-  "lastChangelogVersion": "0.65.0",
-  "defaultProvider": "anthropic",
-  "defaultModel": "claude-opus-4-6",
+  "lastChangelogVersion": "0.79.8",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.5",
   "defaultThinkingLevel": "high",
-  "theme": "dark",
-  "steeringMode": "all"
+  "theme": "light",
+  "steeringMode": "all",
+  "packages": [
+    "npm:@victor-software-house/pi-multicodex"
+  ]
 }

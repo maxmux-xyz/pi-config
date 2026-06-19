@@ -1,11 +1,22 @@
 # Private - credentials
 auth.json
+codex-accounts.json
+
+# Private - local trust state
+trust.json
 
 # Private - session history
 sessions/
 
-# Dependencies - regenerate with: cd extensions && npm install
+# Local backups
+*.bak-*
+
+# Dependencies - regenerated with npm install
+node_modules/
 extensions/node_modules/
+
+# Pi package installs - regenerated from settings.json
+npm/
 
 PLAN.md
 
